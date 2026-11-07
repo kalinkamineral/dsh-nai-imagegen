@@ -37,7 +37,7 @@ import { qualityTagText } from './lib/quality-tags.js'
 import { llmModels, llmStatus } from './lib/llm.js'
 import { dnaFromImage, loadPresets, resetPreset, savePresets, writePrompt } from './lib/writer.js'
 import { editCharacter, mergeEditDraft } from './lib/character-edit.js'
-import { estimateView, generateView, listItems, panelView, probeView, stripText, toolCard } from './lib/dsh-go.js'
+import { estimateView, formatBytes, generateView, listItems, panelView, probeView, studioView, stripText, toolCard } from './lib/dsh-go.js'
 import {
   characterCoverFile,
   deleteCharacter,
@@ -509,15 +509,16 @@ async function renderLogged(kind, options) {
   // waiting by the relay's download, the entry itself says so instead of a bare
   // wall-clock number.
   const progress = options.progress ?? { firstByteMs: null, received: 0, total: null }
-  const onProgress =
-    typeof options.onProgress === 'function'
-      ? options.onProgress
-      : (info) => {
-          progress.received = Number(info?.received) || 0
-          progress.total = info?.total === undefined || info?.total === null ? null : Number(info.total)
-          if (info?.headers === true && progress.firstByteMs === null) progress.firstByteMs = Date.now() - started
-          if (progress.received > 0 && progress.firstByteMs === null) progress.firstByteMs = Date.now() - started
-        }
+  // The log's counters are updated for every progress tick; a caller that also
+  // wants the bytes (the DSH Go workbench shows them live) gets the same tick
+  // afterwards, so neither writer can starve the other.
+  const onProgress = (info) => {
+    progress.received = Number(info?.received) || 0
+    progress.total = info?.total === undefined || info?.total === null ? null : Number(info.total)
+    if (info?.headers === true && progress.firstByteMs === null) progress.firstByteMs = Date.now() - started
+    if (progress.received > 0 && progress.firstByteMs === null) progress.firstByteMs = Date.now() - started
+    if (typeof options.onProgress === 'function') options.onProgress(info)
+  }
   const facts = () => ({
     kind,
     model: trace.model ?? options.model ?? null,
@@ -1609,6 +1610,104 @@ async function buildDshGoData(options = {}) {
   }
   dshGoCache = { data, at: cachedAt }
   return data
+}
+
+// ----------------------------------------------------------- dsh-go studio --
+/**
+ * One workbench state per conversation: the form values the user is editing
+ * plus (at most) the single render that is running.
+ *
+ * State is keyed by `scope.sessionId`, because the same panel can be mounted in
+ * several conversations at once and each must keep its own draft.
+ */
+const studioStates = new Map()
+
+/**
+ * The state bucket for one conversation.
+ * @param sessionId - `scope.sessionId`, possibly absent in a bare host.
+ * @returns the mutable bucket.
+ */
+function studioStateOf(sessionId) {
+  const key = String(sessionId ?? 'default')
+  let state = studioStates.get(key)
+  if (state === undefined) {
+    state = { form: null, job: null }
+    studioStates.set(key, state)
+  }
+  return state
+}
+
+/**
+ * The form's initial values, taken from the shared settings.
+ * @param config - the loaded configuration.
+ * @returns a fresh form object.
+ */
+function studioFormDefaults(config) {
+  return {
+    prompt: '',
+    negative: '',
+    size: '832x1216',
+    steps: config.steps,
+    model: config.model,
+    sampler: config.sampler,
+    seed: '',
+    n: 1,
+    useArtist: true
+  }
+}
+
+/**
+ * The complete data snapshot the panel's bindings read.
+ *
+ * `emit` takes the whole object every time, so the form values ride along with
+ * the progress text: the panel would otherwise lose its defaults on the second
+ * tick. Values come from the host-side form, which `onChange` keeps in sync
+ * with what the user typed.
+ *
+ * @param state - the conversation's bucket.
+ * @param config - the loaded configuration.
+ * @returns the panel data.
+ */
+function studioSnapshot(state, config) {
+  const form = state.form ?? studioFormDefaults(config)
+  const [rawWidth, rawHeight] = String(form.size ?? '832x1216').split('x').map(Number)
+  const width = Number.isFinite(rawWidth) && rawWidth > 0 ? rawWidth : config.width
+  const height = Number.isFinite(rawHeight) && rawHeight > 0 ? rawHeight : config.height
+  const steps = Math.min(50, Math.max(1, Number(form.steps) || config.steps))
+  const nSamples = Math.min(config.maxImagesPerCall, Math.max(1, Number(form.n) || 1))
+  const weight = costWeight({ width, height, steps, nSamples })
+  const estimateText = insideFreeBand({ width, height, steps, nSamples })
+    ? `相对消耗 ${weight} · Opus 标准尺寸内，不计费`
+    : `相对消耗 ${weight} · 超出免计费区间，会消耗 Anlas`
+
+  const job = state.job
+  let jobText = '还没有任务：填好参数后点「生成」'
+  let resultText = ''
+  const resultItems = []
+  if (job !== null && job !== undefined) {
+    if (job.status === 'running') {
+      const elapsed = Math.max(0, Math.round((Date.now() - job.startedAt) / 1000))
+      const received = formatBytes(Number(job.received) || 0)
+      const total = job.total === null || job.total === undefined ? '' : ` / ${formatBytes(Number(job.total))}`
+      jobText = `生成中 ${elapsed}s · 已收到 ${received}${total}`
+    } else if (job.status === 'done') {
+      const elapsed = Math.round(((job.ms ?? 0) / 1000) * 10) / 10
+      jobText = `完成 · ${job.files.length} 张 · ${elapsed}s · 相对消耗 ${job.weight ?? weight}`
+      resultText = '最近一次结果（点按复制路径）'
+      for (const file of job.files) {
+        resultItems.push({
+          title: String(file.name ?? '图片'),
+          subtitle: `${formatBytes(Number(file.bytes) || 0)}${file.seed === null || file.seed === undefined ? '' : ` · seed ${file.seed}`}`,
+          action: { id: 'copyFile', args: { path: String(file.path ?? '') } }
+        })
+      }
+    } else if (job.status === 'cancelled') {
+      jobText = '已取消'
+    } else if (job.status === 'error') {
+      jobText = `失败：${job.error}`
+    }
+  }
+  return { form, jobText, resultText, resultItems, estimateText }
 }
 
 /**
@@ -3486,9 +3585,6 @@ export function apply(ctx) {
       view: (_scope, caps) => panelView(caps),
       data: (_scope, emit, caps) => {
         let alive = true
-        // The first emit uses anything already cached; only a missing balance
-        // costs one free probe. After that the panel re-reads local state every
-        // two minutes, and 刷新余额 forces a real subscription read.
         const send = async (refresh) => {
           try {
             const data = await buildDshGoData({ refresh, locale: caps?.locale })
@@ -3517,6 +3613,88 @@ export function apply(ctx) {
           const character = (dshGoCache.data?.characters ?? []).find((row) => row.id === id)
           if (character === undefined) return { toast: '角色不在了' }
           return { insert: character.insertText, toast: '已插入关键字' }
+        },
+        copyFile: (_scope, event) => {
+          const path = String(event?.value?.path ?? '')
+          return path === '' ? { toast: '没有路径' } : { copy: path, toast: '已复制路径' }
+        }
+      }
+    })
+    goCtx.dshGo.panel('novelai-studio', {
+      view: (_scope, caps) => studioView(caps),
+      data: (scope, emit, caps) => {
+        const state = studioStateOf(scope?.sessionId)
+        let alive = true
+        let lastKey = ''
+        const push = async () => {
+          try {
+            const config = await load()
+            if (state.form === null) state.form = studioFormDefaults(config)
+            const snapshot = studioSnapshot(state, config)
+            const key = JSON.stringify(snapshot)
+            if (key !== lastKey) { lastKey = key; if (alive) emit(snapshot) }
+          } catch (failure) { if (alive) emit({ jobText: String(failure?.message ?? failure) }) }
+        }
+        push()
+        const timer = setInterval(push, 1000)
+        return () => { alive = false; clearInterval(timer) }
+      },
+      actions: {
+        changed: (scope, event) => {
+          const bind = String(event?.value?.bind ?? '')
+          if (!bind.startsWith('data.form.')) return undefined
+          const state = studioStateOf(scope?.sessionId)
+          if (state.form === null) state.form = {}
+          state.form[bind.slice(10)] = event.value.value
+          return undefined
+        },
+        generate: async (scope, event) => {
+          const state = studioStateOf(scope?.sessionId)
+          const config = await load()
+          if (state.form === null) state.form = studioFormDefaults(config)
+          const values = event?.value?.values ?? {}
+          for (const [bind, value] of Object.entries(values)) if (bind.startsWith('data.form.')) state.form[bind.slice(10)] = value
+          if (state.job?.status === 'running') return { toast: '正在生成，先等这一张' }
+          const form = state.form
+          const prompt = String(form.prompt ?? '').trim()
+          if (prompt === '') return { toast: '先写提示词' }
+          const [width, height] = (form.size ?? '832x1216').split('x').map(Number)
+          const controller = new AbortController()
+          const job = { status:'running', startedAt: Date.now(), received:0, total:null, files:[], error:'', controller }
+          state.job = job
+          job.weight = costWeight({ width, height, steps: Number(form.steps) || config.steps, nSamples: Math.min(config.maxImagesPerCall, Math.max(1, Number(form.n) || 1)) })
+          renderLogged('panel:studio', {
+            prompt,
+            negativePrompt: String(form.negative ?? '').trim() || undefined,
+            width, height,
+            steps: Number(form.steps) || config.steps,
+            model: String(form.model ?? config.model),
+            sampler: String(form.sampler ?? config.sampler),
+            seed: Number(form.seed) || undefined,
+            nSamples: Math.min(config.maxImagesPerCall, Math.max(1, Number(form.n) || 1)),
+            artistId: form.useArtist === false ? -1 : undefined,
+            signal: controller.signal,
+            onProgress: (info) => { job.received = Number(info?.received) || 0; job.total = info?.total ?? null }
+          }).then((result) => {
+            job.status = 'done'
+            job.ms = Date.now() - job.startedAt
+            job.files = (result.files ?? []).map((file) => ({
+              name: file.name,
+              bytes: file.bytes,
+              seed: file.seed,
+              path: file.file
+            }))
+          }).catch((err) => {
+            job.ms = Date.now() - job.startedAt
+            job.status = controller.signal.aborted ? 'cancelled' : 'error'
+            job.error = String(err?.message ?? err)
+          })
+          return { toast: '已开始生成' }
+        },
+        cancel: (scope) => {
+          const state = studioStateOf(scope?.sessionId)
+          if (state.job?.status === 'running') state.job.controller.abort()
+          return { toast: '已取消' }
         },
         copyFile: (_scope, event) => {
           const path = String(event?.value?.path ?? '')

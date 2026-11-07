@@ -19,7 +19,7 @@ import { httpRequest } from '../lib/net.js'
 import { createServer } from 'node:http'
 import { sourceDirOf } from '../lib/config.js'
 import { characterEditPrompt, mergeEditDraft, normalizeEditDraft, validateEditReply } from '../lib/character-edit.js'
-import { estimateView, formatBytes, generateView, listItems, panelView, probeView, stripText, toolCard } from '../lib/dsh-go.js'
+import { estimateView, formatBytes, generateView, listItems, panelView, probeView, studioView, stripText, toolCard } from '../lib/dsh-go.js'
 import { apply, sourceListing } from '../index.js'
 import { isWithin, resolveWithin } from '../lib/util.js'
 
@@ -386,9 +386,13 @@ await check('the dsh-go manifest declares the strip and the panel', async () => 
   const manifest = pkg.dshGo
   assert.equal(manifest.v, 1)
   assert.ok(manifest.contributes.panels.some((row) => row.id === 'novelai'))
+  assert.ok(manifest.contributes.panels.some((row) => row.id === 'novelai-studio'))
   assert.ok(manifest.contributes['composer.strip'].some((row) => row.panel === 'novelai'))
   const idPattern = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/
   for (const row of [...manifest.contributes.panels, ...manifest.contributes['composer.strip']]) assert.match(row.id, idPattern)
+  const ids = manifest.contributes.panels.map((row) => row.id)
+  assert.equal(new Set(ids).size, ids.length, 'panel ids must be unique')
+  assert.ok(manifest.contributes.panels.length <= 4)
   assert.ok(Buffer.byteLength(JSON.stringify(manifest), 'utf8') <= 16 * 1024)
 })
 
@@ -410,6 +414,121 @@ await check('the dsh-go panel view stays inside the panel budget', async () => {
     walk(view)
     for (const type of types) assert.ok(DSH_GO_TYPES.has(type), `unknown component ${type}`)
   }
+})
+
+const STUDIO_INPUT_TYPES = new Set(['textField', 'number', 'stepper', 'toggle', 'select', 'segmented', 'chips', 'slider', 'date', 'time', 'rating'])
+
+/** Walk a v2 view and collect every node. */
+function collectNodes(node, out = []) {
+  if (node === null || typeof node !== 'object') return out
+  if (Array.isArray(node)) {
+    for (const child of node) collectNodes(child, out)
+    return out
+  }
+  if (typeof node.type === 'string') out.push(node)
+  for (const value of Object.values(node)) collectNodes(value, out)
+  return out
+}
+
+const STUDIO_CAPS = {
+  components: ['stack', 'text', 'callout', 'list', 'actions', 'form', 'textField', 'number', 'stepper', 'toggle', 'select', 'segmented']
+}
+
+await check('the studio view degrades to v1 on an app without inputs', async () => {
+  const view = studioView({ locale: 'zh', components: ['stack', 'text', 'callout', 'list', 'actions'] })
+  assert.equal(view.v, 1)
+  const types = collectNodes(view).map((node) => node.type)
+  assert.ok(!types.includes('form'))
+  assert.ok(!types.includes('textField'))
+  assert.ok(types.includes('callout'))
+})
+
+await check('the studio view is a valid native form inside the panel budget', async () => {
+  for (const locale of ['zh', 'en']) {
+    const view = studioView({ ...STUDIO_CAPS, locale })
+    const bytes = Buffer.byteLength(JSON.stringify(view), 'utf8')
+    const stats = viewStats(view)
+    assert.ok(bytes <= 32 * 1024, `${locale}: ${bytes} bytes`)
+    assert.ok(stats.nodes <= 120, `${locale}: ${stats.nodes} nodes`)
+    assert.ok(stats.depth <= 8, `${locale}: depth ${stats.depth}`)
+    const nodes = collectNodes(view)
+    const types = [...new Set(nodes.map((node) => node.type))]
+    for (const type of types) assert.ok(type === 'form' || DSH_GO_TYPES.has(type) || STUDIO_INPUT_TYPES.has(type), `unknown component ${type}`)
+    const form = nodes.find((node) => node.type === 'form')
+    assert.ok(form, 'the workbench must be a real form')
+    assert.equal(form.submit, 'generate')
+    const inputs = nodes.filter((node) => STUDIO_INPUT_TYPES.has(node.type))
+    assert.ok(inputs.length >= 8, `${locale}: ${inputs.length} inputs`)
+    for (const input of inputs) {
+      assert.equal(typeof input.label, 'string')
+      assert.ok(input.label.length > 0)
+      assert.match(input.bind, /^data\.form\.[A-Za-z0-9]+$/)
+      assert.equal(input.onChange, 'changed')
+    }
+    // The submit button lives on the form, so its label must exist in both languages.
+    assert.ok(String(form.submitLabel ?? '').length > 0)
+  }
+})
+
+/** Mount the host with a fake dsh-go bridge and capture the panels. */
+async function capturePanels() {
+  const panels = new Map()
+  const ctx = {
+    tools: { register: () => () => {} },
+    effect: (fn) => {
+      fn()
+      return () => {}
+    },
+    webServer: { register: () => () => {} },
+    inject: (_services, fn) =>
+      fn({
+        dshGo: {
+          panel: (id, config) => panels.set(id, config),
+          strip: () => () => {}
+        }
+      })
+  }
+  apply(ctx)
+  return panels
+}
+
+await check('the studio panel is registered and emits its form defaults', async () => {
+  const panels = await capturePanels()
+  assert.ok(panels.has('novelai-studio'), 'the studio panel must be registered')
+  const studio = panels.get('novelai-studio')
+  assert.equal(typeof studio.view, 'function')
+  assert.equal(typeof studio.data, 'function')
+  for (const action of ['generate', 'changed', 'cancel', 'copyFile']) assert.equal(typeof studio.actions[action], 'function', action)
+
+  const emitted = []
+  const stop = studio.data({ sessionId: 'studio-test' }, (data) => emitted.push(data), { locale: 'zh' })
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  stop()
+  assert.ok(emitted.length >= 1, 'the panel must emit a first snapshot')
+  const first = emitted[0]
+  assert.equal(first.form.size, '832x1216')
+  assert.equal(first.form.useArtist, true)
+  assert.match(first.jobText, /还没有任务/)
+  assert.match(first.estimateText, /相对消耗/)
+  assert.deepEqual(first.resultItems, [])
+})
+
+await check('the studio panel keeps typed values and refuses an empty prompt', async () => {
+  const panels = await capturePanels()
+  const studio = panels.get('novelai-studio')
+  const scope = { sessionId: 'studio-test-typing' }
+  studio.actions.changed(scope, { value: { bind: 'data.form.prompt', value: '1girl, solo' } })
+
+  const emitted = []
+  const stop = studio.data(scope, (data) => emitted.push(data), { locale: 'zh' })
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  stop()
+  assert.equal(emitted.at(-1).form.prompt, '1girl, solo')
+
+  const refused = await studio.actions.generate({ sessionId: 'studio-test-empty' }, { value: { values: {} } })
+  assert.match(String(refused.toast ?? ''), /提示词/)
+  const cancelled = studio.actions.cancel({ sessionId: 'studio-test-empty' })
+  assert.match(String(cancelled.toast ?? ''), /取消/)
 })
 
 await check('the dsh-go tool cards fit the card budget', async () => {
