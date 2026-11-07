@@ -192,8 +192,9 @@ try {
   })
 
   await check('readBaseImage refuses a path outside the source directory', async () => {
-    await assert.rejects(() => readBaseImage({ root, filePath: '..\\outside.png' }), /outside the allowed directory/)
-    await assert.rejects(() => readBaseImage({ root, filePath: 'C:\\Windows\\win.ini' }), /outside the allowed directory/)
+    // Cross-platform escape forms: `..` is a real parent segment on both
+    await assert.rejects(() => readBaseImage({ root, filePath: join('..', 'outside.png') }), /outside the allowed directory/)
+    await assert.rejects(() => readBaseImage({ root, filePath: join(tmpdir(), 'outside.png') }), /outside the allowed directory/)
   })
 
   await check('readBaseImage refuses a missing file and a non-image file', async () => {
@@ -233,7 +234,8 @@ try {
 await check('sourceDirOf derives the source folder from the output directory when unset', async () => {
   const outputDir = join(tmpdir(), 'proj', '_out', 'nai')
   assert.equal(await sourceDirOf({ sourceDir: '', outputDir }), join(tmpdir(), 'proj', '_in', 'nai'))
-  assert.equal(await sourceDirOf({ sourceDir: 'D:\\custom\\base', outputDir }), 'D:\\custom\\base')
+  const customBase = join(tmpdir(), 'custom', 'base')
+  assert.equal(await sourceDirOf({ sourceDir: customBase, outputDir }), customBase)
 })
 
 await check('resolveWithin accepts inside paths and rejects escapes', () => {
@@ -241,7 +243,7 @@ await check('resolveWithin accepts inside paths and rejects escapes', () => {
   assert.equal(resolveWithin(dir, 'a.png'), join(dir, 'a.png'))
   assert.equal(isWithin(dir, join(dir, 'sub', 'a.png')), true)
   assert.equal(isWithin(dir, join(tmpdir(), 'other', 'a.png')), false)
-  assert.throws(() => resolveWithin(dir, '..\\a.png'), /outside the allowed directory/)
+  assert.throws(() => resolveWithin(dir, join('..', 'a.png')), /outside the allowed directory/)
   assert.throws(() => resolveWithin(dir, ''), /empty path/)
 })
 
