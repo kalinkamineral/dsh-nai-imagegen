@@ -1659,6 +1659,24 @@ window.__ModuleLoader__.load({
 .nai-s-flash>span{flex:1}
 .nai-s-flash>button{flex:none;border:0;background:none;color:inherit;font:inherit;cursor:pointer;opacity:.7;padding:0 2px}
 .nai-s-body{flex:1;min-height:0;overflow-y:auto;padding:14px 14px 34px;scrollbar-gutter:stable}
+/* 插件页位置：自适应宽度。窄窗口等同于侧栏；宽窗口放宽容器并加列。 */
+.nai-s-page{height:100%;width:100%;max-width:clamp(720px,94vw,1120px);margin:0 auto;border-left:1px solid var(--line-soft);border-right:1px solid var(--line-soft);background:var(--paper)}
+.nai-s-page .nai-s-body{padding:16px 22px 44px}
+.nai-s-page .nai-s-row{gap:12px}
+.nai-s-page .nai-s-pane,.nai-s-page .nai-s-stack{gap:12px}
+@media (min-width:1100px){
+  .nai-s-page{max-width:1240px}
+  .nai-s-page .nai-s-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .nai-s-page .nai-s-body{padding:18px 26px 48px}
+  /* 宽屏下导航不拉成一整排巨大的页签，靠左紧凑排列。 */
+  .nai-s-page .nai-s-nav{justify-content:flex-start;padding-left:14px}
+  .nai-s-page .nai-s-tab{flex:0 0 auto;padding-left:16px;padding-right:16px}
+}
+@media (min-width:1440px){
+  .nai-s-page{max-width:1520px}
+  .nai-s-page .nai-s-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .nai-s-page .nai-s-body{padding:20px 30px 56px}
+}
 .nai-s-pane{display:flex;flex-direction:column;gap:12px}
 .nai-s-stack{display:flex;flex-direction:column;gap:12px}
 .nai-s-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -6736,22 +6754,9 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           sourcePickerModal,
           galleryPickerModal
         )
-        // 侧栏位置原样铺满；插件页位置居中限宽，读起来仍像一栏而不是被拉宽的表单。
-        return props.layout === 'side'
-          ? sideFrame
-          : h(
-              'div',
-              {
-                style: {
-                  height: '100%',
-                  maxWidth: 960,
-                  margin: '0 auto',
-                  borderLeft: '1px solid var(--line-soft)',
-                  borderRight: '1px solid var(--line-soft)'
-                }
-              },
-              sideFrame
-            )
+        // 侧栏位置原样铺满；插件页位置换成自适应容器：窄屏仍是单栏，
+        // 宽屏放宽并增加参数网格列数，而不是把侧栏居中拉窄。
+        return props.layout === 'side' ? sideFrame : h('div', { className: 'nai-s-page' }, sideFrame)
       }
 
       return h(
