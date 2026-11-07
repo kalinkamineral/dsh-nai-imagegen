@@ -2118,7 +2118,9 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
       const maskCanvas = React.useRef(null)
       const paintingRef = React.useRef(false)
       // ---- sidebar layout ----
-      const side = props.layout === 'side'
+      // 插件页位置（layout !== 'side'）也渲染同一套侧栏布局：两处再也不会出现
+      // 「网页版一套、插件页另一套」的分叉。宽度在下面按 layout 加约束。
+      const side = true
       /** The config as last loaded or saved; the form is diffed against it. */
       const [baseline, setBaseline] = React.useState(null)
       const [sideNav, setSideNav] = React.useState('create')
@@ -6646,7 +6648,7 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           ['library', t('sideNavLibrary')],
           ['settings', t('sideNavSettings')]
         ]
-        return h(
+        const sideFrame = h(
           'div',
           { className: 'nai-s' },
           h(
@@ -6734,6 +6736,22 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           sourcePickerModal,
           galleryPickerModal
         )
+        // 侧栏位置原样铺满；插件页位置居中限宽，读起来仍像一栏而不是被拉宽的表单。
+        return props.layout === 'side'
+          ? sideFrame
+          : h(
+              'div',
+              {
+                style: {
+                  height: '100%',
+                  maxWidth: 960,
+                  margin: '0 auto',
+                  borderLeft: '1px solid var(--line-soft)',
+                  borderRight: '1px solid var(--line-soft)'
+                }
+              },
+              sideFrame
+            )
       }
 
       return h(

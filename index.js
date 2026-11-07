@@ -37,7 +37,7 @@ import { qualityTagText } from './lib/quality-tags.js'
 import { llmModels, llmStatus } from './lib/llm.js'
 import { dnaFromImage, loadPresets, resetPreset, savePresets, writePrompt } from './lib/writer.js'
 import { editCharacter, mergeEditDraft } from './lib/character-edit.js'
-import { STUDIO_SIZES, estimateView, formatBytes, generateView, listItems, panelView, probeView, studioView, stripText, toolCard } from './lib/dsh-go.js'
+import { STUDIO_SIZES, estimateView, formatBytes, generateView, listItems, nativePanelView, panelView, probeView, studioView, stripText, toolCard } from './lib/dsh-go.js'
 import {
   characterCoverFile,
   deleteCharacter,
@@ -1631,7 +1631,19 @@ function studioStateOf(sessionId) {
   const key = String(sessionId ?? 'default')
   let state = studioStates.get(key)
   if (state === undefined) {
-    state = { form: null, job: null, writer: null, writerDraft: '' }
+    state = {
+      form: null,
+      job: null,
+      writer: null,
+      writerDraft: '',
+      edit: { source: '', strength: 0.55, tool: 'img2img', prompt: '' },
+      editJob: null,
+      lib: { query: '' },
+      settings: null,
+      cache: null,
+      doctorText: '',
+      settingsText: ''
+    }
     studioStates.set(key, state)
   }
   return state
@@ -1655,6 +1667,36 @@ function studioFormDefaults(config) {
     seed: null,
     n: 1,
     useArtist: true
+  }
+}
+
+/**
+ * Load the listings the panel's 图库 / 编辑 / 画师串 sections show.
+ *
+ * Loaded once per session (and again after an explicit refresh) rather than on
+ * every one-second push: the directories can hold thousands of files.
+ *
+ * @param config - the loaded configuration.
+ * @returns the cache object.
+ */
+async function loadStudioCache(config) {
+  const outputDir = await outputDirOf(config)
+  const sourceDir = await sourceDirOf(config)
+  const [galleryFiles, sourceFiles, artists] = await Promise.all([
+    gallery(outputDir, 24).catch(() => []),
+    sourceListing(sourceDir, 24).catch(() => []),
+    loadArtists(config).catch(() => ({ entries: [] }))
+  ])
+  const pool = poolFor(config)
+  return {
+    gallery: galleryFiles,
+    sources: sourceFiles,
+    artists: artists.entries ?? [],
+    keys: pool.list(),
+    keySummary: pool.healthSummary(),
+    libItems: [],
+    libHits: [],
+    libText: ''
   }
 }
 
@@ -1719,6 +1761,41 @@ function studioSnapshot(state, config) {
   else if (writer?.status === 'cancelled') writerText = '写词已取消'
   if (writer?.error) writerError = writer.error
 
+  const cache = state.cache ?? { gallery: [], sources: [], artists: [], keys: [], keySummary: null, libItems: [], libHits: [], libText: '' }
+  const activeArtist = cache.artists.find((row) => Number(row.id) === Number(config.artistId)) ?? null
+  const settings = {
+    baseUrl: config.baseUrl,
+    decode: config.decode ?? 'json',
+    proxy: String(config.proxy ?? ''),
+    model: config.model,
+    steps: config.steps,
+    width: config.width,
+    height: config.height,
+    ...(state.settings ?? {})
+  }
+  const edit = state.edit ?? { source: '', strength: 0.55, tool: 'img2img', prompt: '' }
+  const editJob = state.editJob
+  let editText = edit.source === '' ? '还没有选源图' : `已选：${edit.source}`
+  const editResults = []
+  if (editJob !== null && editJob !== undefined) {
+    if (editJob.status === 'running') {
+      editText = `运行中 ${Math.round((Date.now() - editJob.startedAt) / 1000)}s · ${edit.tool}`
+    } else if (editJob.status === 'done') {
+      editText = `完成 · ${editJob.files.length} 张`
+      for (const file of editJob.files) {
+        editResults.push({
+          title: String(file.name ?? '图片'),
+          subtitle: formatBytes(Number(file.bytes) || 0),
+          action: { id: 'copyFile', args: { path: String(file.file ?? '') } }
+        })
+      }
+    } else if (editJob.status === 'cancelled') {
+      editText = '已取消'
+    } else if (editJob.status === 'error') {
+      editText = `失败：${editJob.error}`
+    }
+  }
+  const keySummary = cache.keySummary ?? null
   return {
     form,
     jobText,
@@ -1728,7 +1805,35 @@ function studioSnapshot(state, config) {
     writer: { text: String(state.writerDraft ?? '') },
     writerText,
     writerBusy,
-    writerError
+    writerError,
+    artistText: `当前画师串：${activeArtist?.name ?? '未选择'}（共 ${cache.artists.length} 个）`,
+    artists: cache.artists.slice(0, 20).map((row) => ({
+      title: row.name,
+      subtitle: Number(row.id) === Number(config.artistId) ? '使用中' : `#${row.id}`,
+      action: { id: 'pickArtist', args: { id: Number(row.id) } }
+    })),
+    edit: { source: edit.source, strength: edit.strength, tool: edit.tool, prompt: edit.prompt },
+    editSourceText: edit.source === '' ? '源图：未选择（点选下面列表里的一张）' : `源图：${edit.source}`,
+    sources: cache.sources.slice(0, 20).map((row) => ({
+      title: String(row.name ?? ''),
+      subtitle: formatBytes(Number(row.bytes) || 0),
+      action: { id: 'pickSource', args: { name: String(row.name ?? '') } }
+    })),
+    editText,
+    editResults,
+    galleryText: `输出目录最近 ${cache.gallery.length} 张`,
+    galleryItems: cache.gallery.slice(0, 24).map((row) => ({
+      title: String(row.name ?? ''),
+      subtitle: formatBytes(Number(row.bytes) || 0),
+      action: { id: 'copyFile', args: { path: String(row.file ?? row.path ?? row.name ?? '') } }
+    })),
+    lib: { query: String(state.lib?.query ?? '') },
+    libItems: cache.libItems,
+    libText: cache.libText,
+    settings,
+    settingsText: state.settingsText,
+    doctorText: state.doctorText,
+    keysText: keySummary === null ? 'Key 池：未知' : `Key 池：${keySummary.keyCount} 个（可用 ${keySummary.usableKeyCount}）`
   }
 }
 
@@ -3722,52 +3827,13 @@ export function apply(ctx) {
         const draft = String(scope?.draft ?? '').trim()
         if (draft !== '') studioStateOf(scope?.sessionId).writerDraft = draft
         return {
-          open: 'panel:novelai-studio',
+          open: 'panel:novelai',
           toast: draft === '' ? '在工作台里写一句描述' : '已带上这句，点 AI 写词'
         }
       })
     }
     goCtx.dshGo.panel('novelai', {
-      view: (_scope, caps) => panelView(caps),
-      data: (_scope, emit, caps) => {
-        let alive = true
-        const send = async (refresh) => {
-          try {
-            const data = await buildDshGoData({ refresh, locale: caps?.locale })
-            if (alive) emit(data)
-          } catch (failure) {
-            if (alive) emit({ ...(dshGoCache.data ?? {}), error: String(failure?.message ?? failure) })
-          }
-        }
-        send(dshGoCache.data?.balance == null).catch(() => {})
-        const timer = setInterval(() => send(false), 120000)
-        return () => {
-          alive = false
-          clearInterval(timer)
-        }
-      },
-      actions: {
-        refresh: () => ({
-          pending: { label: '刷新中', timeoutMs: 45000 },
-          result: async () => {
-            const data = await buildDshGoData({ refresh: true })
-            return { patch: data, toast: data.error === '' ? '已刷新' : '刷新失败' }
-          }
-        }),
-        useCharacter: (_scope, event) => {
-          const id = String(event?.value?.id ?? '')
-          const character = (dshGoCache.data?.characters ?? []).find((row) => row.id === id)
-          if (character === undefined) return { toast: '角色不在了' }
-          return { insert: character.insertText, toast: '已插入关键字' }
-        },
-        copyFile: (_scope, event) => {
-          const path = String(event?.value?.path ?? '')
-          return path === '' ? { toast: '没有路径' } : { copy: path, toast: '已复制路径' }
-        }
-      }
-    })
-    goCtx.dshGo.panel('novelai-studio', {
-      view: (_scope, caps) => studioView(caps),
+      view: (_scope, caps) => nativePanelView(caps),
       data: (scope, emit, caps) => {
         const state = studioStateOf(scope?.sessionId)
         let alive = true
@@ -3776,26 +3842,51 @@ export function apply(ctx) {
           try {
             const config = await load()
             if (state.form === null) state.form = studioFormDefaults(config)
+            if (state.cache === null) state.cache = await loadStudioCache(config)
             const snapshot = studioSnapshot(state, config)
             const key = JSON.stringify(snapshot)
-            if (key !== lastKey) { lastKey = key; if (alive) emit(snapshot) }
-          } catch (failure) { if (alive) emit({ jobText: String(failure?.message ?? failure) }) }
+            if (key !== lastKey) {
+              lastKey = key
+              if (alive) emit(snapshot)
+            }
+          } catch (failure) {
+            if (alive) emit({ jobText: String(failure?.message ?? failure) })
+          }
         }
         push()
         const timer = setInterval(push, 1000)
-        return () => { alive = false; clearInterval(timer) }
+        return () => {
+          alive = false
+          clearInterval(timer)
+        }
       },
       actions: {
         changed: (scope, event) => {
           const bind = String(event?.value?.bind ?? '')
+          const value = event?.value?.value
           const state = studioStateOf(scope?.sessionId)
           if (bind === 'data.writer.text') {
-            state.writerDraft = String(event?.value?.value ?? '')
+            state.writerDraft = String(value ?? '')
             return undefined
           }
-          if (!bind.startsWith('data.form.')) return undefined
-          if (state.form === null) state.form = {}
-          state.form[bind.slice(10)] = event.value.value
+          if (bind.startsWith('data.form.')) {
+            if (state.form === null) state.form = {}
+            state.form[bind.slice('data.form.'.length)] = value
+            return undefined
+          }
+          if (bind.startsWith('data.edit.')) {
+            state.edit[bind.slice('data.edit.'.length)] = value
+            return undefined
+          }
+          if (bind === 'data.lib.query') {
+            state.lib.query = String(value ?? '')
+            return undefined
+          }
+          if (bind.startsWith('data.settings.')) {
+            if (state.settings === null) state.settings = {}
+            state.settings[bind.slice('data.settings.'.length)] = value
+            return undefined
+          }
           return undefined
         },
         generate: async (scope, event) => {
@@ -3803,7 +3894,7 @@ export function apply(ctx) {
           const config = await load()
           if (state.form === null) state.form = studioFormDefaults(config)
           const values = event?.value?.values ?? {}
-          for (const [bind, value] of Object.entries(values)) if (bind.startsWith('data.form.')) state.form[bind.slice(10)] = value
+          for (const [bind, value] of Object.entries(values)) if (bind.startsWith('data.form.')) state.form[bind.slice('data.form.'.length)] = value
           if (state.job?.status === 'running') return { toast: '正在生成，先等这一张' }
           const form = state.form
           const prompt = String(form.prompt ?? '').trim()
@@ -3813,7 +3904,7 @@ export function apply(ctx) {
           const job = { status:'running', startedAt: Date.now(), received:0, total:null, files:[], error:'', controller }
           state.job = job
           job.weight = costWeight({ width, height, steps: Number(form.steps) || config.steps, nSamples: Math.min(config.maxImagesPerCall, Math.max(1, Number(form.n) || 1)) })
-          renderLogged('panel:studio', {
+          renderLogged('panel:create', {
             prompt,
             negativePrompt: String(form.negative ?? '').trim() || undefined,
             width, height,
@@ -3887,10 +3978,128 @@ export function apply(ctx) {
           state.writer.controller.abort()
           return { toast: '已取消写词' }
         },
+        pickArtist: async (scope, event) => {
+          const state = studioStateOf(scope?.sessionId)
+          const id = Number(event?.value?.id)
+          if (!Number.isInteger(id)) return { toast: '没有这个画师串' }
+          await save({ artistId: id })
+          state.cache = null
+          return { toast: '已切换画师串' }
+        },
+        pickSource: (scope, event) => {
+          const state = studioStateOf(scope?.sessionId)
+          const name = String(event?.value?.name ?? '')
+          if (name === '') return { toast: '没有这个文件' }
+          state.edit.source = name
+          return { toast: `已选：${name}` }
+        },
+        runEdit: async (scope) => {
+          const state = studioStateOf(scope?.sessionId)
+          const config = await load()
+          if (state.form === null) state.form = studioFormDefaults(config)
+          if (state.editJob?.status === 'running') return { toast: '正在运行' }
+          if (String(state.edit.source ?? '') === '') return { toast: '先选源图' }
+          const controller = new AbortController()
+          const job = { status: 'running', startedAt: Date.now(), files: [], error: '', tool: state.edit.tool, controller }
+          state.editJob = job
+          const done = (result) => {
+            job.status = 'done'
+            job.ms = Date.now() - job.startedAt
+            job.files = result?.files ?? []
+          }
+          const fail = (error) => {
+            job.ms = Date.now() - job.startedAt
+            job.status = controller.signal.aborted ? 'cancelled' : 'error'
+            job.error = String(error?.message ?? error)
+          }
+          if (state.edit.tool === 'img2img') {
+            const prompt = String(state.edit.prompt ?? '').trim() || String(state.form.prompt ?? '').trim()
+            if (prompt === '') return { toast: '先写提示词' }
+            const [width, height] = String(state.form.size ?? '832x1216').split('x').map(Number)
+            renderLogged('panel:edit', {
+              prompt,
+              sourceImage: state.edit.source,
+              strength: Number(state.edit.strength) || 0.55,
+              width,
+              height,
+              steps: Number(state.form.steps) || config.steps,
+              model: String(state.form.model ?? config.model),
+              sampler: String(state.form.sampler ?? config.sampler),
+              signal: controller.signal
+            }).then(done).catch(fail)
+          } else {
+            runDirectorTool({ from: 'source', name: state.edit.source, type: state.edit.tool, signal: controller.signal }).then(done).catch(fail)
+          }
+          return { toast: '已开始' }
+        },
+        cancelEdit: (scope) => {
+          const state = studioStateOf(scope?.sessionId)
+          if (state.editJob?.status !== 'running') return { toast: '没有正在运行的任务' }
+          state.editJob.controller.abort()
+          return { toast: '已取消' }
+        },
+        refreshGallery: async (scope) => {
+          const state = studioStateOf(scope?.sessionId)
+          const config = await load()
+          state.cache = null
+          state.cache = await loadStudioCache(config)
+          return { toast: '已刷新' }
+        },
+        lookup: async (scope) => {
+          const state = studioStateOf(scope?.sessionId)
+          const query = String(state.lib?.query ?? '').trim()
+          if (query === '') return { toast: '先输入关键词' }
+          const config = await load()
+          if (state.cache === null) state.cache = await loadStudioCache(config)
+          const result = await lookup(query, { libraryDir: config.libraryDir, limit: 8 })
+          state.cache.libHits = result.hits ?? []
+          state.cache.libItems = (result.hits ?? []).map((hit, index) => ({
+            title: hit.title || hit.library,
+            subtitle: `${hit.library} · ${hit.chars} 字符`,
+            action: { id: 'copyHit', args: { index } }
+          }))
+          state.cache.libText = `找到 ${(result.hits ?? []).length} 条`
+          return { toast: state.cache.libText }
+        },
+        copyHit: (scope, event) => {
+          const state = studioStateOf(scope?.sessionId)
+          const index = Number(event?.value?.index)
+          const hit = state.cache?.libHits?.[index]
+          if (hit === undefined) return { toast: '结果不在了' }
+          return { copy: String(hit.content ?? '').slice(0, 8000), toast: '已复制正文' }
+        },
         copyFile: (_scope, event) => {
           const path = String(event?.value?.path ?? '')
           return path === '' ? { toast: '没有路径' } : { copy: path, toast: '已复制路径' }
-        }
+        },
+        saveSettings: async (scope, event) => {
+          const state = studioStateOf(scope?.sessionId)
+          const values = event?.value?.values ?? {}
+          const patch = {}
+          for (const [bind, value] of Object.entries(values)) {
+            if (bind.startsWith('data.settings.')) patch[bind.slice('data.settings.'.length)] = value
+          }
+          if (Object.keys(patch).length === 0) return { toast: '没有要保存的字段' }
+          await save(patch)
+          state.settings = null
+          state.cache = null
+          state.settingsText = `已保存：${Object.keys(patch).join('、')}`
+          return { toast: '已保存' }
+        },
+        runDoctor: (scope) => ({
+          pending: { label: '自检中', timeoutMs: 60000 },
+          result: async () => {
+            const state = studioStateOf(scope?.sessionId)
+            try {
+              const report = await doctorReport()
+              state.doctorText = String(formatDoctor(report)).slice(0, 1500)
+              return { toast: '自检完成' }
+            } catch (error) {
+              state.doctorText = `自检失败：${String(error?.message ?? error)}`
+              return { toast: '自检失败' }
+            }
+          }
+        })
       }
     })
     goCtx.dshGo.strip('nai-balance', (_scope, emit, caps) => {

@@ -19,7 +19,7 @@ import { httpRequest } from '../lib/net.js'
 import { createServer } from 'node:http'
 import { sourceDirOf } from '../lib/config.js'
 import { characterEditPrompt, mergeEditDraft, normalizeEditDraft, validateEditReply } from '../lib/character-edit.js'
-import { estimateView, formatBytes, generateView, listItems, panelView, probeView, studioView, stripText, toolCard } from '../lib/dsh-go.js'
+import { estimateView, formatBytes, generateView, listItems, nativePanelView, panelView, probeView, studioView, stripText, toolCard } from '../lib/dsh-go.js'
 import { apply, applyWriterResult, sourceListing, writerErrorMessage } from '../index.js'
 import { isWithin, resolveWithin } from '../lib/util.js'
 
@@ -386,7 +386,6 @@ await check('the dsh-go manifest declares the strip and the panel', async () => 
   const manifest = pkg.dshGo
   assert.equal(manifest.v, 1)
   assert.ok(manifest.contributes.panels.some((row) => row.id === 'novelai'))
-  assert.ok(manifest.contributes.panels.some((row) => row.id === 'novelai-studio'))
   assert.ok(manifest.contributes['composer.strip'].some((row) => row.panel === 'novelai'))
   const idPattern = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/
   for (const row of [...manifest.contributes.panels, ...manifest.contributes['composer.strip']]) assert.match(row.id, idPattern)
@@ -542,11 +541,15 @@ async function captureTools() {
 
 await check('the studio panel is registered and emits its form defaults', async () => {
   const panels = await capturePanels()
-  assert.ok(panels.has('novelai-studio'), 'the studio panel must be registered')
-  const studio = panels.get('novelai-studio')
+  assert.ok(panels.has('novelai'), 'the studio panel must be registered')
+  const studio = panels.get('novelai')
   assert.equal(typeof studio.view, 'function')
   assert.equal(typeof studio.data, 'function')
-  for (const action of ['generate', 'changed', 'cancel', 'copyFile']) assert.equal(typeof studio.actions[action], 'function', action)
+  for (const action of [
+    'generate', 'changed', 'cancel', 'write', 'cancelWrite', 'copyFile',
+    'pickArtist', 'pickSource', 'runEdit', 'cancelEdit',
+    'refreshGallery', 'lookup', 'copyHit', 'saveSettings', 'runDoctor'
+  ]) assert.equal(typeof studio.actions[action], 'function', action)
 
   const emitted = []
   const stop = studio.data({ sessionId: 'studio-test' }, (data) => emitted.push(data), { locale: 'zh' })
@@ -566,7 +569,7 @@ await check('the studio panel is registered and emits its form defaults', async 
 
 await check('the studio panel keeps typed values and refuses an empty prompt', async () => {
   const panels = await capturePanels()
-  const studio = panels.get('novelai-studio')
+  const studio = panels.get('novelai')
   const scope = { sessionId: 'studio-test-typing' }
   studio.actions.changed(scope, { value: { bind: 'data.form.prompt', value: '1girl, solo' } })
 
@@ -605,16 +608,41 @@ await check('writer results flatten into the workbench form', () => {
   assert.match(writerErrorMessage(new Error('boom')), /boom/)
 })
 
+await check('the native panel mirrors the sidebar as five tabs inside the budget', async () => {
+  for (const locale of ['zh', 'en']) {
+    const view = nativePanelView({ ...STUDIO_CAPS, locale })
+    const bytes = Buffer.byteLength(JSON.stringify(view), 'utf8')
+    const stats = viewStats(view)
+    assert.ok(bytes <= 32 * 1024, `${locale}: ${bytes} bytes`)
+    assert.ok(stats.nodes <= 120, `${locale}: ${stats.nodes} nodes`)
+    assert.ok(stats.depth <= 8, `${locale}: depth ${stats.depth}`)
+    const nodes = collectNodes(view)
+    const tabs = nodes.find((node) => node.type === 'tabs')
+    assert.ok(tabs, 'the panel must use tabs')
+    assert.equal(tabs.items.length, 5)
+    for (const item of tabs.items) assert.ok(String(item.label ?? '').length > 0)
+    const forms = nodes.filter((node) => node.type === 'form').map((node) => node.submit)
+    assert.deepEqual(forms.sort(), ['generate', 'saveSettings'])
+    for (const input of nodes.filter((node) => node.bind)) assert.match(input.bind, /^data\.(form|writer|edit|lib|settings)\.[A-Za-z0-9]+$/)
+  }
+})
+
+await check('the native panel degrades to v1 on an app without inputs', async () => {
+  const view = nativePanelView({ locale: 'zh', components: ['stack', 'text', 'callout', 'list', 'actions'] })
+  assert.equal(view.v, 1)
+  assert.ok(!collectNodes(view).some((node) => node.type === 'form'))
+})
+
 await check('the AI writer capsule prefills the workbench draft and opens it', async () => {
   const panels = await capturePanels()
   const handler = panels.handlers.get('nai-writer')
   assert.equal(typeof handler, 'function', 'the capsule handler must be registered')
 
   const effect = handler({ sessionId: 'capsule-test', draft: '雨后的屋顶，少女坐着' })
-  assert.equal(effect.open, 'panel:novelai-studio')
+  assert.equal(effect.open, 'panel:novelai')
   assert.match(String(effect.toast ?? ''), /已带上/)
 
-  const studio = panels.get('novelai-studio')
+  const studio = panels.get('novelai')
   const emitted = []
   const stop = studio.data({ sessionId: 'capsule-test' }, (data) => emitted.push(data), { locale: 'zh' })
   await new Promise((resolve) => setTimeout(resolve, 120))
@@ -623,7 +651,7 @@ await check('the AI writer capsule prefills the workbench draft and opens it', a
 
   // Without a draft it still opens the workbench.
   const empty = handler({ sessionId: 'capsule-empty', draft: '' })
-  assert.equal(empty.open, 'panel:novelai-studio')
+  assert.equal(empty.open, 'panel:novelai')
   assert.match(String(empty.toast ?? ''), /工作台/)
 })
 
@@ -647,7 +675,7 @@ await check('the nai_write_prompt tool is registered and validates its input', a
 
 await check('the writer action validates its draft and can be cancelled', async () => {
   const panels = await capturePanels()
-  const studio = panels.get('novelai-studio')
+  const studio = panels.get('novelai')
   const scope = { sessionId: 'studio-test-writer' }
 
   studio.actions.changed(scope, { value: { bind: 'data.writer.text', value: '雨后的屋顶，少女坐着' } })

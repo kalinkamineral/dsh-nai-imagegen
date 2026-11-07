@@ -17,7 +17,7 @@ A NovelAI image-generation plugin for **DeepSeek Harness (DSH)**: a sidebar pane
 - **Artist strings**: import an index, search, preview, temporary override
 - **Prompt writer**: turns a sentence or a reference image into a structured NovelAI prompt using the model configured in DSH
 - **Key pool**: several keys render concurrently; 401/403 disables a key, 429/5xx cools it down and retries elsewhere
-- **DSH Go (Android)**: a native generation workbench (form, AI prompt writer, live progress, cancel), a composer「AI Write」capsule, native tool cards, a balance strip, and the account panel
+- **DSH Go (Android)**: a native panel mirroring the sidebar (Create / Edit / Gallery / Library / Settings tabs), a composer「AI Write」capsule, native tool cards, and a balance strip
 - **Debug log**: writer, render and connectivity calls are recorded (including TTFB and downloaded bytes)
 
 ## Download
