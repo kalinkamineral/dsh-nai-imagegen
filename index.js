@@ -37,7 +37,7 @@ import { qualityTagText } from './lib/quality-tags.js'
 import { llmModels, llmStatus } from './lib/llm.js'
 import { dnaFromImage, loadPresets, resetPreset, savePresets, writePrompt } from './lib/writer.js'
 import { editCharacter, mergeEditDraft } from './lib/character-edit.js'
-import { estimateView, formatBytes, generateView, listItems, panelView, probeView, studioView, stripText, toolCard } from './lib/dsh-go.js'
+import { STUDIO_SIZES, estimateView, formatBytes, generateView, listItems, panelView, probeView, studioView, stripText, toolCard } from './lib/dsh-go.js'
 import {
   characterCoverFile,
   deleteCharacter,
@@ -1631,7 +1631,7 @@ function studioStateOf(sessionId) {
   const key = String(sessionId ?? 'default')
   let state = studioStates.get(key)
   if (state === undefined) {
-    state = { form: null, job: null }
+    state = { form: null, job: null, writer: null, writerDraft: '' }
     studioStates.set(key, state)
   }
   return state
@@ -1710,7 +1710,87 @@ function studioSnapshot(state, config) {
       jobText = `失败：${job.error}`
     }
   }
-  return { form, jobText, resultText, resultItems, estimateText }
+  const writer = state.writer
+  const writerBusy = writer?.status === 'running'
+  let writerText = ''
+  let writerError = ''
+  if (writerBusy) writerText = `写词中 ${Math.round((Date.now() - writer.startedAt) / 1000)}s…`
+  else if (writer?.status === 'done') writerText = '已回填到提示词（可继续修改）'
+  else if (writer?.status === 'cancelled') writerText = '写词已取消'
+  if (writer?.error) writerError = writer.error
+
+  return {
+    form,
+    jobText,
+    resultText,
+    resultItems,
+    estimateText,
+    writer: { text: String(state.writerDraft ?? '') },
+    writerText,
+    writerBusy,
+    writerError
+  }
+}
+
+/**
+ * Join two comma-separated prompt fragments without doubling separators.
+ * @param current - the existing text, possibly empty.
+ * @param extra - the fragment to append.
+ * @returns the combined text.
+ */
+function appendPromptText(current, extra) {
+  const left = String(current ?? '').trim()
+  const right = String(extra ?? '').trim()
+  if (right === '') return left
+  return left === '' ? right : `${left}, ${right}`
+}
+
+/**
+ * The one-line reason a write attempt failed, for the panel's error line.
+ * @param error - whatever `writePrompt` threw.
+ * @returns a short message.
+ */
+export function writerErrorMessage(error) {
+  if (error?.code === 'WRITER_REFUSED') return '模型拒绝了这次写词'
+  if (error?.code === 'WORKBENCH_CAPTION_INVALID' || error?.code === 'CAPTION_INVALID') return '模型没有按格式返回提示词'
+  if (Number(error?.status) === 503) return String(error?.message ?? '写词模型不可用')
+  return String(error?.message ?? error)
+}
+
+/**
+ * Write a writer result back into the workbench form.
+ *
+ * Characters are flattened into the single prompt/negative pair the workbench
+ * has: each character's positive tags join the prompt, its negative tags join
+ * the negative prompt. The base caption replaces the prompt because the writer
+ * was asked to describe the scene; the negative is appended so a hand-written
+ * list is not silently lost.
+ *
+ * @param state - the conversation's bucket.
+ * @param result - the `writePrompt` result.
+ */
+export function applyWriterResult(state, result) {
+  const form = state.form
+  if (form === null) return
+  const caption = result?.caption
+  if (caption !== null && typeof caption === 'object') {
+    const parts = [String(caption.base ?? '').trim()].filter((text) => text !== '')
+    const negatives = [String(caption.baseNegative ?? '').trim()].filter((text) => text !== '')
+    for (const row of Array.isArray(caption.characters) ? caption.characters : []) {
+      const positive = String(row?.positive ?? '').trim()
+      if (positive !== '') parts.push(positive)
+      const negative = String(row?.negative ?? '').trim()
+      if (negative !== '') negatives.push(negative)
+    }
+    if (parts.length > 0) form.prompt = parts.join(', ')
+    if (negatives.length > 0) form.negative = appendPromptText(form.negative, negatives.join(', '))
+  }
+  const width = Number(result?.size?.width)
+  const height = Number(result?.size?.height)
+  if (Number.isFinite(width) && Number.isFinite(height)) {
+    const value = `${width}x${height}`
+    if (STUDIO_SIZES.some((row) => row.value === value)) form.size = value
+  }
 }
 
 /**
@@ -3645,8 +3725,12 @@ export function apply(ctx) {
       actions: {
         changed: (scope, event) => {
           const bind = String(event?.value?.bind ?? '')
-          if (!bind.startsWith('data.form.')) return undefined
           const state = studioStateOf(scope?.sessionId)
+          if (bind === 'data.writer.text') {
+            state.writerDraft = String(event?.value?.value ?? '')
+            return undefined
+          }
+          if (!bind.startsWith('data.form.')) return undefined
           if (state.form === null) state.form = {}
           state.form[bind.slice(10)] = event.value.value
           return undefined
@@ -3701,6 +3785,44 @@ export function apply(ctx) {
           const state = studioStateOf(scope?.sessionId)
           if (state.job?.status === 'running') state.job.controller.abort()
           return { toast: '已取消' }
+        },
+        write: async (scope) => {
+          const state = studioStateOf(scope?.sessionId)
+          const text = String(state.writerDraft ?? '').trim()
+          if (state.writer?.status === 'running') return { toast: '正在写词' }
+          if (text === '') return { toast: '先写一句描述' }
+          const config = await load()
+          if (state.form === null) state.form = studioFormDefaults(config)
+          const controller = new AbortController()
+          const writer = { status: 'running', startedAt: Date.now(), error: '', controller }
+          state.writer = writer
+          const [width, height] = String(state.form.size ?? '832x1216').split('x').map(Number)
+          writePrompt(ctx, {
+            naturalLanguage: text,
+            references: [],
+            characterIds: [],
+            width: Number.isFinite(width) ? width : undefined,
+            height: Number.isFinite(height) ? height : undefined,
+            config,
+            signal: controller.signal
+          })
+            .then((result) => {
+              writer.status = 'done'
+              writer.ms = Date.now() - writer.startedAt
+              applyWriterResult(state, result)
+            })
+            .catch((error) => {
+              writer.status = controller.signal.aborted ? 'cancelled' : 'error'
+              writer.ms = Date.now() - writer.startedAt
+              writer.error = controller.signal.aborted ? '' : writerErrorMessage(error)
+            })
+          return { toast: '开始写词' }
+        },
+        cancelWrite: (scope) => {
+          const state = studioStateOf(scope?.sessionId)
+          if (state.writer?.status !== 'running') return { toast: '没有正在写词' }
+          state.writer.controller.abort()
+          return { toast: '已取消写词' }
         },
         copyFile: (_scope, event) => {
           const path = String(event?.value?.path ?? '')

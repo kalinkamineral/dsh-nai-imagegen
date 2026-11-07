@@ -20,7 +20,7 @@ import { createServer } from 'node:http'
 import { sourceDirOf } from '../lib/config.js'
 import { characterEditPrompt, mergeEditDraft, normalizeEditDraft, validateEditReply } from '../lib/character-edit.js'
 import { estimateView, formatBytes, generateView, listItems, panelView, probeView, studioView, stripText, toolCard } from '../lib/dsh-go.js'
-import { apply, sourceListing } from '../index.js'
+import { apply, applyWriterResult, sourceListing, writerErrorMessage } from '../index.js'
 import { isWithin, resolveWithin } from '../lib/util.js'
 
 let passed = 0
@@ -462,11 +462,19 @@ await check('the studio view is a valid native form inside the panel budget', as
     for (const input of inputs) {
       assert.equal(typeof input.label, 'string')
       assert.ok(input.label.length > 0)
-      assert.match(input.bind, /^data\.form\.[A-Za-z0-9]+$/)
+      assert.match(input.bind, /^data\.(form|writer)\.[A-Za-z0-9]+$/)
       assert.equal(input.onChange, 'changed')
     }
     // The submit button lives on the form, so its label must exist in both languages.
     assert.ok(String(form.submitLabel ?? '').length > 0)
+    // 「AI 写词」 rides on the same view: a bound draft plus its two actions.
+    const writerField = nodes.find((node) => node.bind === 'data.writer.text')
+    assert.ok(writerField, 'the writer textField must be bound to data.writer.text')
+    assert.equal(writerField.type, 'textField')
+    assert.equal(writerField.onChange, 'changed')
+    const actionItems = nodes.filter((node) => node.type === 'actions').flatMap((node) => node.items ?? [])
+    assert.ok(actionItems.some((item) => item.action === 'write'), 'the write action must be wired')
+    assert.ok(actionItems.some((item) => item.action === 'cancelWrite'), 'the cancelWrite action must be wired')
   }
 })
 
@@ -511,6 +519,9 @@ await check('the studio panel is registered and emits its form defaults', async 
   assert.match(first.jobText, /还没有任务/)
   assert.match(first.estimateText, /相对消耗/)
   assert.deepEqual(first.resultItems, [])
+  assert.equal(first.writer.text, '')
+  assert.equal(typeof first.writerText, 'string')
+  assert.equal(first.writerError, '')
 })
 
 await check('the studio panel keeps typed values and refuses an empty prompt', async () => {
@@ -529,6 +540,48 @@ await check('the studio panel keeps typed values and refuses an empty prompt', a
   assert.match(String(refused.toast ?? ''), /提示词/)
   const cancelled = studio.actions.cancel({ sessionId: 'studio-test-empty' })
   assert.match(String(cancelled.toast ?? ''), /取消/)
+})
+
+await check('writer results flatten into the workbench form', () => {
+  const state = { form: { prompt: '', negative: 'lowres', size: '832x1216' } }
+  applyWriterResult(state, {
+    caption: {
+      base: '1girl, rooftop',
+      baseNegative: 'blurry',
+      characters: [{ positive: 'red hair', negative: 'hat' }]
+    },
+    size: { width: 1216, height: 832 }
+  })
+  assert.equal(state.form.prompt, '1girl, rooftop, red hair')
+  assert.equal(state.form.negative, 'lowres, blurry, hat')
+  assert.equal(state.form.size, '1216x832')
+
+  // A size the segmented control does not offer must not overwrite the form.
+  applyWriterResult(state, { caption: { base: 'x', baseNegative: '', characters: [] }, size: { width: 900, height: 900 } })
+  assert.equal(state.form.size, '1216x832')
+
+  assert.equal(writerErrorMessage({ code: 'WRITER_REFUSED' }), '模型拒绝了这次写词')
+  assert.match(writerErrorMessage({ status: 503, message: 'no model' }), /no model/)
+  assert.match(writerErrorMessage(new Error('boom')), /boom/)
+})
+
+await check('the writer action validates its draft and can be cancelled', async () => {
+  const panels = await capturePanels()
+  const studio = panels.get('novelai-studio')
+  const scope = { sessionId: 'studio-test-writer' }
+
+  studio.actions.changed(scope, { value: { bind: 'data.writer.text', value: '雨后的屋顶，少女坐着' } })
+  const emitted = []
+  const stop = studio.data(scope, (data) => emitted.push(data), { locale: 'zh' })
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  stop()
+  assert.equal(emitted.at(-1).writer.text, '雨后的屋顶，少女坐着')
+
+  const empty = await studio.actions.write({ sessionId: 'studio-test-writer-empty' }, { value: {} })
+  assert.match(String(empty.toast ?? ''), /描述/)
+
+  const cancel = studio.actions.cancelWrite({ sessionId: 'studio-test-writer-empty' })
+  assert.match(String(cancel.toast ?? ''), /没有正在写词/)
 })
 
 await check('the dsh-go tool cards fit the card budget', async () => {
