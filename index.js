@@ -1650,7 +1650,9 @@ function studioFormDefaults(config) {
     steps: config.steps,
     model: config.model,
     sampler: config.sampler,
-    seed: '',
+    // `number` inputs bind a number or null; an empty string is not a value the
+    // App's number field can show.
+    seed: null,
     n: 1,
     useArtist: true
   }
@@ -1670,6 +1672,7 @@ function studioFormDefaults(config) {
  */
 function studioSnapshot(state, config) {
   const form = state.form ?? studioFormDefaults(config)
+  if (form.seed === '') form.seed = null
   const [rawWidth, rawHeight] = String(form.size ?? '832x1216').split('x').map(Number)
   const width = Number.isFinite(rawWidth) && rawWidth > 0 ? rawWidth : config.width
   const height = Number.isFinite(rawHeight) && rawHeight > 0 ? rawHeight : config.height
@@ -3670,7 +3673,10 @@ export function apply(ctx) {
             steps: Number(form.steps) || config.steps,
             model: String(form.model ?? config.model),
             sampler: String(form.sampler ?? config.sampler),
-            seed: Number(form.seed) || undefined,
+            seed:
+              form.seed === null || form.seed === undefined || form.seed === ''
+                ? undefined
+                : Number(form.seed) || undefined,
             nSamples: Math.min(config.maxImagesPerCall, Math.max(1, Number(form.n) || 1)),
             artistId: form.useArtist === false ? -1 : undefined,
             signal: controller.signal,
