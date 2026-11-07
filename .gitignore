@@ -24,3 +24,6 @@ logs/
 # 分析流程缓存（output-phrasing-engineering 工作流产物，不入库）
 .analysis-cache.md
 .analysis-archive/
+
+# release bundle build output
+dist/

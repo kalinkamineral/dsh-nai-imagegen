@@ -1,6 +1,8 @@
 # dsh-nai-imagegen
 
-[![verify](https://github.com/kalinkamineral/dsh-nai-imagegen/actions/workflows/verify.yml/badge.svg)](https://github.com/kalinkamineral/dsh-nai-imagegen/actions/workflows/verify.yml)
+[简体中文](README.md) · [English](README.en.md)
+
+[![verify](https://github.com/kalinkamineral/dsh-nai-imagegen/actions/workflows/verify.yml/badge.svg)](https://github.com/kalinkamineral/dsh-nai-imagegen/actions/workflows/verify.yml) [![release](https://img.shields.io/github/v/release/kalinkamineral/dsh-nai-imagegen)](https://github.com/kalinkamineral/dsh-nai-imagegen/releases)
 
 DeepSeek Harness（DSH）的 NovelAI 出图插件：右侧栏面板 + 一组 `nai_*` 工具，由 Agent 直接调用。
 
@@ -17,6 +19,11 @@ DeepSeek Harness（DSH）的 NovelAI 出图插件：右侧栏面板 + 一组 `na
 - **Key 池**：多 Key 多并发出图，401/403 停用、429/5xx 冷却换 Key
 - **DSH Go（Android）**：原生工具卡、余额状态条、原生面板
 - **调试日志**：写词 / 出图 / 连接测试全部留痕（含 TTFB 与下载字节数）
+
+## 下载
+
+- **分享版**（不含 token / 画师串 / 角色数据）：[Releases](https://github.com/kalinkamineral/dsh-nai-imagegen/releases/latest) 里的 `dsh-nai-imagegen-friend-*.zip`
+- 开发者直接克隆仓库安装即可（见下）。
 
 ## 安装
 
