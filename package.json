@@ -26,16 +26,32 @@
   },
   "dshGo": {
     "v": 1,
-    "title": { "zh": "NovelAI 出图", "en": "NovelAI" },
+    "title": {
+      "zh": "NovelAI 出图",
+      "en": "NovelAI"
+    },
     "icon": "generate-image",
     "contributes": {
-      "composer.strip": [{ "id": "nai-balance", "icon": "coin", "panel": "novelai" }],
+      "composer.strip": [
+        {
+          "id": "nai-balance",
+          "icon": "coin",
+          "panel": "novelai"
+        }
+      ],
       "panels": [
         {
           "id": "novelai",
-          "title": { "zh": "NovelAI", "en": "NovelAI" },
+          "title": {
+            "zh": "NovelAI",
+            "en": "NovelAI"
+          },
           "icon": "generate-image",
-          "placement": ["session.tab", "features", "chat.panel"]
+          "placement": [
+            "session.tab",
+            "features",
+            "chat.panel"
+          ]
         }
       ]
     }
@@ -45,5 +61,20 @@
     "install:profile": "node install.mjs",
     "install:profile:apply": "node install.mjs --apply",
     "uninstall:profile": "node install.mjs --uninstall --apply"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kalinkamineral/dsh-nai-imagegen.git"
+  },
+  "homepage": "https://github.com/kalinkamineral/dsh-nai-imagegen",
+  "bugs": {
+    "url": "https://github.com/kalinkamineral/dsh-nai-imagegen/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "novelai",
+    "image-generation",
+    "plugin"
+  ]
 }

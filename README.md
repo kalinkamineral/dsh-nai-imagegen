@@ -1,5 +1,7 @@
 # dsh-nai-imagegen
 
+[![verify](https://github.com/kalinkamineral/dsh-nai-imagegen/actions/workflows/verify.yml/badge.svg)](https://github.com/kalinkamineral/dsh-nai-imagegen/actions/workflows/verify.yml)
+
 DeepSeek Harness（DSH）的 NovelAI 出图插件：右侧栏面板 + 一组 `nai_*` 工具，由 Agent 直接调用。
 
 > 非官方项目。需要你自己准备 NovelAI 账号的 Persistent Token（或一个可用的中转站）。
@@ -21,7 +23,8 @@ DeepSeek Harness（DSH）的 NovelAI 出图插件：右侧栏面板 + 一组 `na
 ### 桌面版 DSH
 
 ```sh
-dsh plugin --profile desktop add "<本仓库的绝对路径>"
+git clone https://github.com/kalinkamineral/dsh-nai-imagegen.git
+dsh plugin --profile desktop add "<克隆后的绝对路径>"
 ```
 
 然后重启 DSH。详见 [README-install.md](README-install.md)。
