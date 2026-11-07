@@ -85,7 +85,7 @@ dsh plugin --profile web add /root/.dsh/dsh-go/plugins/dsh-nai-imagegen
 index.js          宿主半侧：工具与 HTTP API
 client.js         浏览器半侧：侧栏面板（手写预构建）
 lib/              网络、配置、角色、画师串、DSH Go 视图等
-tests/verify.mjs  离线测试（不联网、不出图）
+tests/run.mjs     离线测试入口（隔离 DSH_HOME，不污染真实日志）
 DESIGN.md         面板设计语言与 token
 config.example.json
 ```
@@ -93,7 +93,7 @@ config.example.json
 ## 开发
 
 ```sh
-node tests/verify.mjs   # 47 项离线检查
+npm run verify   # 61 项离线检查
 ```
 
 无外部运行时依赖，只需要 Node.js 22.19+。改动宿主代码后需重启 DSH；仅前端改动刷新页面即可。

@@ -14,4 +14,4 @@ jobs:
         with:
           node-version: '22'
       - name: Offline verification suite
-        run: node tests/verify.mjs
+        run: node tests/run.mjs

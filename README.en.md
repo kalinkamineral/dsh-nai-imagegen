@@ -85,7 +85,7 @@ The agent can change the same settings with `nai_config`, or you can edit `$DSH_
 index.js          host half: tools and HTTP API
 client.js         browser half: sidebar panel (prebuilt by hand)
 lib/              networking, config, characters, artist strings, DSH Go views
-tests/verify.mjs  offline test suite (no network, no renders)
+tests/run.mjs     offline suite entry (isolated DSH_HOME, no real-log writes)
 DESIGN.md         panel design language and tokens
 config.example.json
 ```
@@ -93,7 +93,7 @@ config.example.json
 ## Development
 
 ```sh
-node tests/verify.mjs   # 47 offline checks
+npm run verify   # 61 offline checks
 ```
 
 No runtime dependencies; Node.js 22.19+ is enough. Restart DSH after host-code changes; a page refresh is enough for client-only changes.

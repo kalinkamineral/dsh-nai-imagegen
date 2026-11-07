@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-08 · 0.6.1
+
+### Fixed
+
+- **离线测试污染真实出图日志**：`npm run verify` 之前用真实的 `DSH_HOME` 运行，每条故意失败的用例（32×32 蒙版、`__definitely_missing__.png`、不支持的导演工具等）都会写进 `~/.dsh/nai-imagegen/logs`，面板因此显示大量假的「出图失败」。
+  - 新增 `tests/run.mjs`：先把 `DSH_HOME` 指向临时目录再加载测试，日志、角色库等状态全部隔离。
+  - `npm run verify` 与 CI 改为走 `tests/run.mjs`。
+  - 附带 `scripts/clean-test-log.py`，可按固定摘要清掉历史噪音（自动 `.bak` 备份）。
+
 ## 2026-11-08 · 0.6.0
 
 ### Changed
