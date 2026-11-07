@@ -1,0 +1,26 @@
+# 依赖与本地缓存（按 workspace-env-isolation 规范隔离在项目内）
+node_modules/
+.npm-store/
+.npm-cache/
+.cache/
+__pycache__/
+
+# 本地运行产物 / 日志
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# 本地配置（真实 token 只允许提交 config.example.json）
+config.local.json
+config.json.bak
+config.json
+
+# 插件本地目录（输入底图、日志、备份源码）
+_in/
+logs/
+*.orig
+
+# 分析流程缓存（output-phrasing-engineering 工作流产物，不入库）
+.analysis-cache.md
+.analysis-archive/

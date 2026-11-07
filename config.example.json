@@ -1,0 +1,19 @@
+{
+  "baseUrl": "https://image.novelai.net",
+  "token": "",
+  "model": "nai-diffusion-5-full",
+  "width": 832,
+  "height": 1216,
+  "steps": 28,
+  "scale": 5,
+  "sampler": "k_euler_ancestral",
+  "ucPreset": 3,
+  "qualityToggle": false,
+  "decode": "json",
+  "proxy": "",
+  "keys": [],
+  "artistId": -1,
+  "autoGenerate": false,
+  "codeButtons": false,
+  "keepImages": 500
+}
