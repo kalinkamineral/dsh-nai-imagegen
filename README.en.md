@@ -17,7 +17,7 @@ A NovelAI image-generation plugin for **DeepSeek Harness (DSH)**: a sidebar pane
 - **Artist strings**: import an index, search, preview, temporary override
 - **Prompt writer**: turns a sentence or a reference image into a structured NovelAI prompt using the model configured in DSH
 - **Key pool**: several keys render concurrently; 401/403 disables a key, 429/5xx cools it down and retries elsewhere
-- **DSH Go (Android)**: a native generation workbench (form, AI prompt writer, live progress, cancel), native tool cards, a balance strip, and the account panel
+- **DSH Go (Android)**: a native generation workbench (form, AI prompt writer, live progress, cancel), a composer「AI Write」capsule, native tool cards, a balance strip, and the account panel
 - **Debug log**: writer, render and connectivity calls are recorded (including TTFB and downloaded bytes)
 
 ## Download
@@ -73,6 +73,7 @@ The agent can change the same settings with `nai_config`, or you can edit `$DSH_
 | `nai_keys` | key-pool management |
 | `nai_artists` | artist strings |
 | `nai_character_edit` | rewrite character features with a prompt |
+| `nai_write_prompt` | one sentence to a structured prompt (with character tags), no render |
 | `nai_doctor` | capability self-check |
 | `nai_config` | change configuration |
 

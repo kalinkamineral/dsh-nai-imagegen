@@ -393,6 +393,19 @@ await check('the dsh-go manifest declares the strip and the panel', async () => 
   const ids = manifest.contributes.panels.map((row) => row.id)
   assert.equal(new Set(ids).size, ids.length, 'panel ids must be unique')
   assert.ok(manifest.contributes.panels.length <= 4)
+  // 输入框胶囊：一个「AI 写词」入口，读输入框草稿。
+  const capsules = manifest.contributes['composer.actions']
+  assert.ok(Array.isArray(capsules) && capsules.length <= 2)
+  const writerCapsule = capsules.find((row) => row.id === 'nai-writer')
+  assert.ok(writerCapsule, 'the AI writer capsule must be declared')
+  assert.ok(writerCapsule.label.zh.length <= 10 && writerCapsule.label.en.length <= 10)
+  assert.ok(manifest.wants.includes('draft'))
+  const allIds = [
+    ...manifest.contributes.panels.map((row) => row.id),
+    ...manifest.contributes['composer.strip'].map((row) => row.id),
+    ...capsules.map((row) => row.id)
+  ]
+  assert.equal(new Set(allIds).size, allIds.length, 'slot ids must be unique across slots')
   assert.ok(Buffer.byteLength(JSON.stringify(manifest), 'utf8') <= 16 * 1024)
 })
 
@@ -481,6 +494,7 @@ await check('the studio view is a valid native form inside the panel budget', as
 /** Mount the host with a fake dsh-go bridge and capture the panels. */
 async function capturePanels() {
   const panels = new Map()
+  const handlers = new Map()
   const ctx = {
     tools: { register: () => () => {} },
     effect: (fn) => {
@@ -492,12 +506,38 @@ async function capturePanels() {
       fn({
         dshGo: {
           panel: (id, config) => panels.set(id, config),
-          strip: () => () => {}
+          strip: () => () => {},
+          on: (id, handler) => handlers.set(id, handler)
         }
       })
   }
   apply(ctx)
+  // Attach the handlers to the returned Map so existing call sites keep working.
+  panels.handlers = handlers
   return panels
+}
+
+/**
+ * Mount the host and capture every registered tool.
+ * @returns {Promise<Map<string, object>>} tool name → definition.
+ */
+async function captureTools() {
+  const tools = new Map()
+  const ctx = {
+    tools: {
+      register: (tool) => {
+        tools.set(tool.name, tool)
+        return () => {}
+      }
+    },
+    effect: (fn) => {
+      fn()
+      return () => {}
+    },
+    webServer: { register: () => () => {} }
+  }
+  apply(ctx)
+  return tools
 }
 
 await check('the studio panel is registered and emits its form defaults', async () => {
@@ -563,6 +603,46 @@ await check('writer results flatten into the workbench form', () => {
   assert.equal(writerErrorMessage({ code: 'WRITER_REFUSED' }), '模型拒绝了这次写词')
   assert.match(writerErrorMessage({ status: 503, message: 'no model' }), /no model/)
   assert.match(writerErrorMessage(new Error('boom')), /boom/)
+})
+
+await check('the AI writer capsule prefills the workbench draft and opens it', async () => {
+  const panels = await capturePanels()
+  const handler = panels.handlers.get('nai-writer')
+  assert.equal(typeof handler, 'function', 'the capsule handler must be registered')
+
+  const effect = handler({ sessionId: 'capsule-test', draft: '雨后的屋顶，少女坐着' })
+  assert.equal(effect.open, 'panel:novelai-studio')
+  assert.match(String(effect.toast ?? ''), /已带上/)
+
+  const studio = panels.get('novelai-studio')
+  const emitted = []
+  const stop = studio.data({ sessionId: 'capsule-test' }, (data) => emitted.push(data), { locale: 'zh' })
+  await new Promise((resolve) => setTimeout(resolve, 120))
+  stop()
+  assert.equal(emitted.at(-1).writer.text, '雨后的屋顶，少女坐着')
+
+  // Without a draft it still opens the workbench.
+  const empty = handler({ sessionId: 'capsule-empty', draft: '' })
+  assert.equal(empty.open, 'panel:novelai-studio')
+  assert.match(String(empty.toast ?? ''), /工作台/)
+})
+
+await check('the nai_write_prompt tool is registered and validates its input', async () => {
+  const tools = await captureTools()
+  const tool = tools.get('nai_write_prompt')
+  assert.ok(tool, 'nai_write_prompt must be registered')
+  assert.equal(tool.parameters.type, 'object')
+  assert.deepEqual(tool.parameters.required, ['natural_language'])
+  // defineTool validates required arguments before the body runs.
+  await assert.rejects(
+    () => tool.execute({}, { signal: new AbortController().signal }),
+    /natural_language/
+  )
+  // An empty sentence reaches the writer and is refused there.
+  await assert.rejects(
+    () => tool.execute({ natural_language: '' }, { signal: new AbortController().signal }),
+    /写一句/
+  )
 })
 
 await check('the writer action validates its draft and can be cancelled', async () => {

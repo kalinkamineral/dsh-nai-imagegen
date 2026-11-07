@@ -2502,6 +2502,55 @@ export function apply(ctx) {
 
   ctx.tools.register(
     defineTool({
+      name: 'nai_write_prompt',
+      description:
+        'Turn one natural-language sentence into a structured NovelAI prompt with the model configured in DSH. ' +
+        'Returns the positive prompt, the negative prompt and any matched character tags, flattened into one prompt pair. ' +
+        'Nothing is rendered: hand the positive prompt to `nai_generate` when it looks right. ' +
+        'Characters mentioned in the sentence are matched against the plugin character library, so their fixed features are written in for you.',
+      parameters: {
+        natural_language: {
+          type: 'string',
+          required: true,
+          description: 'What the picture should show, in plain words, e.g. "雨后的屋顶，少女坐着看远处的城市".'
+        },
+        width: { type: 'integer', description: 'Output width, when the caller already knows the size.' },
+        height: { type: 'integer', description: 'Output height, when the caller already knows the size.' }
+      },
+      output: { schema: { type: 'string' }, render: textRender((value) => value) },
+      async execute(args, exec) {
+        exec.signal.throwIfAborted()
+        const config = await load()
+        const result = await writePrompt(ctx, {
+          naturalLanguage: String(args.natural_language ?? '').trim(),
+          references: [],
+          characterIds: [],
+          width: args.width,
+          height: args.height,
+          config,
+          signal: exec.signal
+        })
+        const caption = result.caption ?? {}
+        const lines = []
+        if (String(caption.base ?? '').trim() !== '') lines.push(`正向：${caption.base}`)
+        if (String(caption.baseNegative ?? '').trim() !== '') lines.push(`负面：${caption.baseNegative}`)
+        for (const row of Array.isArray(caption.characters) ? caption.characters : []) {
+          const name = String(row?.name ?? '').trim()
+          const positive = String(row?.positive ?? '').trim()
+          if (positive === '') continue
+          lines.push(`角色${name === '' ? '' : ` ${name}`}：${positive}`)
+        }
+        if (String(result.analysis ?? '').trim() !== '') lines.push(`分析：${result.analysis}`)
+        if (result.size && Number(result.size.width) > 0) lines.push(`尺寸：${result.size.width}x${result.size.height}`)
+        lines.push('')
+        lines.push('（未出图；把正向提示词交给 nai_generate 即可）')
+        return lines.join('\n')
+      }
+    })
+  )
+
+  ctx.tools.register(
+    defineTool({
       name: 'nai_character_edit',
       description:
         "Rewrite one character in the plugin's character library with the configured prompt model: fixed DNA, variable outfits, keywords and the per-character negative. " +
@@ -3664,6 +3713,20 @@ export function apply(ctx) {
   // without a cordis injector.
   if (typeof ctx.inject === 'function') {
     ctx.inject(['dshGo'], (goCtx) => {
+    // 输入框胶囊：把输入框里刚写的那句话带进工作台的「AI 写词」框，并打开面板。
+    // `draft` 需要清单里的 `wants: ['draft']`；没有输入文字时只负责打开面板。
+    // `on` is part of the core bridge; guarding keeps a deliberately minimal fake
+    // host (and an older bridge that only implements panels) from breaking apply().
+    if (typeof goCtx.dshGo.on === 'function') {
+      goCtx.dshGo.on('nai-writer', (scope) => {
+        const draft = String(scope?.draft ?? '').trim()
+        if (draft !== '') studioStateOf(scope?.sessionId).writerDraft = draft
+        return {
+          open: 'panel:novelai-studio',
+          toast: draft === '' ? '在工作台里写一句描述' : '已带上这句，点 AI 写词'
+        }
+      })
+    }
     goCtx.dshGo.panel('novelai', {
       view: (_scope, caps) => panelView(caps),
       data: (_scope, emit, caps) => {

@@ -1,7 +1,7 @@
 {
   "name": "dsh-nai-imagegen",
   "description": "NovelAI 文生图插件：侧栏面板管理凭据与默认参数，宿主半侧注册 nai_* 工具直连 NovelAI 图像 API，出图落盘后由 Agent 在正文里内联显示。",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -66,8 +66,21 @@
             "chat.panel"
           ]
         }
+      ],
+      "composer.actions": [
+        {
+          "id": "nai-writer",
+          "label": {
+            "zh": "AI 写词",
+            "en": "AI Write"
+          },
+          "icon": "lightbulb"
+        }
       ]
-    }
+    },
+    "wants": [
+      "draft"
+    ]
   },
   "scripts": {
     "verify": "node tests/verify.mjs",

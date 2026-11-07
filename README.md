@@ -17,7 +17,7 @@ DeepSeek Harness（DSH）的 NovelAI 出图插件：右侧栏面板 + 一组 `na
 - **画师串**：导入索引、搜索、预览、临时覆盖
 - **写提示词**：调用 DSH 配置的模型，把一句话 / 参考图写成结构化提示词
 - **Key 池**：多 Key 多并发出图，401/403 停用、429/5xx 冷却换 Key
-- **DSH Go（Android）**：原生生图工作台（表单直接出图、AI 写词、实时进度、取消）、原生工具卡、余额状态条
+- **DSH Go（Android）**：原生生图工作台（表单直接出图、AI 写词、实时进度、取消）、输入框「AI 写词」胶囊、原生工具卡、余额状态条
 - **调试日志**：写词 / 出图 / 连接测试全部留痕（含 TTFB 与下载字节数）
 
 ## 下载
@@ -73,6 +73,7 @@ dsh plugin --profile web add /root/.dsh/dsh-go/plugins/dsh-nai-imagegen
 | `nai_keys` | Key 池管理 |
 | `nai_artists` | 画师串 |
 | `nai_character_edit` | 用提示词改写角色特征 |
+| `nai_write_prompt` | 一句话写成结构化提示词（含角色标签），不出图 |
 | `nai_doctor` | 能力自检 |
 | `nai_config` | 修改配置 |
 
