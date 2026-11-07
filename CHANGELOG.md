@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-08 · 0.6.0
+
+### Changed
+
+- **生图请求链路对齐参考插件**（nai-dbgen / st-chatu8）：
+  - 新增**单次请求总时限**（默认 300000 ms，配置项 `requestTimeoutMs`）。原来的空闲超时只能发现连接彻底安静；一个每分钟滴几字节的中转能让请求无限挂着。
+  - V5 请求补上官方客户端与 st-chatu8 都会发送的 `use_new_shared_trial`（仅 v5 生效，配置项 `useNewSharedTrial`）。
+  - **URL 回退**：baseUrl 带自定义挂载路径时，先请求 `<base>/ai/generate-image`，遇到 404/405 再试原始 baseUrl（st-chatu8 的多候选逻辑）。只在这两个状态码回退，真正的生成失败绝不重发，避免重复计费。
+  - 连接阶段失败（`phase: 'connect'`）也允许换候选 URL 再试一次，因为请求没有到达模型。
+
+### Config
+
+- `requestTimeoutMs`：默认 300000，0 表示不限。
+- `useNewSharedTrial`：默认 true，仅对 v5 模型写入请求体。
+
 ## 2026-11-07 · 0.5.1
 
 ### Changed

@@ -14,10 +14,10 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
-import { acceptForDecode, buildPayload, decodeResponse, insideFreeBand, readBaseImage, sniffImage, MAX_SOURCE_BYTES, MAX_SOURCE_PIXELS } from '../lib/nai.js'
+import { acceptForDecode, buildPayload, decodeResponse, generateUrlCandidates, insideFreeBand, readBaseImage, sniffImage, MAX_SOURCE_BYTES, MAX_SOURCE_PIXELS } from '../lib/nai.js'
 import { httpRequest } from '../lib/net.js'
 import { createServer } from 'node:http'
-import { sourceDirOf } from '../lib/config.js'
+import { defaults as configDefaults, sourceDirOf } from '../lib/config.js'
 import { characterEditPrompt, mergeEditDraft, normalizeEditDraft, validateEditReply } from '../lib/character-edit.js'
 import { estimateView, formatBytes, generateView, listItems, nativePanelView, panelView, probeView, studioView, stripText, toolCard } from '../lib/dsh-go.js'
 import { apply, applyWriterResult, sourceListing, writerErrorMessage } from '../index.js'
@@ -263,6 +263,52 @@ await check('sourceListing lists image files only and skips the rest', async () 
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+await check('the V5 wire payload carries the shared-trial flag', () => {
+  const base = { prompt: '1girl, solo', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' }
+  const v5 = buildPayload({ ...base, model: 'nai-diffusion-5-full' })
+  assert.equal(v5.use_new_shared_trial, true)
+  assert.equal(v5.parameters.width, 832)
+  const v3 = buildPayload({ ...base, model: 'nai-diffusion-3' })
+  assert.equal(v3.use_new_shared_trial, undefined)
+  const off = buildPayload({ ...base, model: 'nai-diffusion-5-full', useNewSharedTrial: false })
+  assert.equal(off.use_new_shared_trial, undefined)
+})
+
+await check('config defaults carry the render deadline and shared-trial flag', () => {
+  const defaults = configDefaults()
+  assert.equal(defaults.requestTimeoutMs, 300000)
+  assert.equal(defaults.useNewSharedTrial, true)
+})
+
+await check('httpRequest enforces its overall deadline on a trickling response', async () => {
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/octet-stream' })
+    // One byte now, never an end: the idle timeout never fires, only the total one.
+    res.write('x')
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const port = server.address().port
+  try {
+    await assert.rejects(
+      () => httpRequest({ url: `http://127.0.0.1:${port}/slow`, timeoutMs: 5000, totalTimeoutMs: 150 }),
+      (error) => error?.code === 'ETOTAL_TIMEOUT' || /total deadline/.test(String(error?.message ?? error))
+    )
+  } finally {
+    server.closeAllConnections?.()
+    server.close()
+  }
+})
+
+await check('generation URLs fall back to the raw relay mount point', () => {
+  assert.deepEqual(generateUrlCandidates('https://relay.example'), ['https://relay.example/ai/generate-image'])
+  assert.deepEqual(generateUrlCandidates('https://relay.example/ai'), ['https://relay.example/ai/generate-image'])
+  assert.deepEqual(generateUrlCandidates('https://relay.example/ai/generate-image'), ['https://relay.example/ai/generate-image'])
+  assert.deepEqual(generateUrlCandidates('https://relay.example/api/nai'), [
+    'https://relay.example/api/nai/ai/generate-image',
+    'https://relay.example/api/nai'
+  ])
 })
 
 await check('sourceListing returns an empty list for a missing directory', async () => {

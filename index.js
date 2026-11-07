@@ -1341,6 +1341,10 @@ async function renderNow(options) {
     // zip (smallest transfer) / json (nai-dbgen-style relay) / auto, from the
     // plugin's 「解码」 setting; generate() turns it into the Accept header.
     accept: acceptForDecode(config.decode),
+    // Overall request deadline and the V5 shared-trial flag from the settings;
+    // both are transport-level, so the sidecar must not treat them as prompt data.
+    requestTimeoutMs: Number(config.requestTimeoutMs) || 300000,
+    useNewSharedTrial: config.useNewSharedTrial !== false,
     // Carried through the pool to `generate` so the panel can show how many
     // bytes of the PNG have arrived. Not part of the request body, and stripped
     // from the sidecar below.
@@ -1380,7 +1384,14 @@ async function renderNow(options) {
   const images = await Promise.all(Array.from({ length: nSamples }, () => activePool.enqueue({ ...job }, { signal: options.signal })))
   // Never persist the base64 payloads: the sidecar is a reproducibility record,
   // and a 1.7 MB PNG becomes ~2.3 MB of base64 per job.
-  const { image: _base64, mask: _mask, onProgress: _onProgress, ...recordable } = job
+  const {
+    image: _base64,
+    mask: _mask,
+    onProgress: _onProgress,
+    requestTimeoutMs: _requestTimeoutMs,
+    useNewSharedTrial: _useNewSharedTrial,
+    ...recordable
+  } = job
   const request = {
     ...recordable,
     nSamples,
@@ -2769,6 +2780,14 @@ export function apply(ctx) {
           description:
             'Response format asked of the relay. zip (default) is the smallest transfer; json mirrors nai-dbgen\'s 「解码: 自动」 and asks for a base64 JSON envelope; auto sends Accept: */* and decodes whatever comes back.'
         },
+        request_timeout_ms: {
+          type: 'integer',
+          description: 'Overall deadline for one generation request in milliseconds (default 300000, 0 disables). The idle timeout still catches a stalled socket sooner.'
+        },
+        use_new_shared_trial: {
+          type: 'boolean',
+          description: 'Send the V5 shared-trial flag the official client sends (v5 models only). Default true.'
+        },
         output_dir: { type: 'string', description: 'Where PNGs are written.' },
         source_dir: {
           type: 'string',
@@ -2807,6 +2826,8 @@ export function apply(ctx) {
           quality_toggle: 'qualityToggle',
           header: 'header',
           decode: 'decode',
+          request_timeout_ms: 'requestTimeoutMs',
+          use_new_shared_trial: 'useNewSharedTrial',
           output_dir: 'outputDir',
           source_dir: 'sourceDir',
           library_dir: 'libraryDir',
@@ -2889,6 +2910,8 @@ export function apply(ctx) {
           // 解码格式（json / zip / auto）。同样必须进白名单，否则面板里选完
           // 保存会被这里静默丢弃，表现为「选了没反应」。
           'decode',
+          'requestTimeoutMs',
+          'useNewSharedTrial',
           'llmProvider',
           'llmModel',
           'llmMaxTokens',

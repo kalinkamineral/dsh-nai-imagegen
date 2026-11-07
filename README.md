@@ -54,6 +54,8 @@ dsh plugin --profile web add /root/.dsh/dsh-go/plugins/dsh-nai-imagegen
 | Token | NovelAI Persistent Token（`pst-` 开头） |
 | 解码 | `json`（默认） / `zip`（体积最小） / `auto`（跟随响应） |
 | 代理 | 留空直连；`auto` 跟随系统代理；或填 `http://127.0.0.1:7890` |
+| 请求总时限 | 单次出图的总时限，默认 300000 ms（5 分钟），`0` 关闭 |
+| V5 共享试用 | 是否发送 `use_new_shared_trial`（仅 V5），默认开 |
 
 也可以让 Agent 用 `nai_config` 修改，或直接编辑 `$DSH_HOME/nai-imagegen/config.json`。
 
