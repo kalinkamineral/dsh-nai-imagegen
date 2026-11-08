@@ -1286,6 +1286,8 @@ await check('the named-preset routes list, save, select and delete', async () =>
   assert.equal(previewBody.kind, 'write')
   assert.ok(previewBody.system.includes('NovelAI'))
   assert.ok(Array.isArray(previewBody.messages) && previewBody.messages.length >= 1)
+  assert.equal(typeof previewBody.toolCall, 'boolean')
+  if (previewBody.toolCall) assert.equal(previewBody.tool?.name, 'submit_caption')
 })
 
 // --------------------------------------------------------------------- report --

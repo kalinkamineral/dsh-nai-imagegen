@@ -6819,6 +6819,19 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                             h('span', { className: 'nai-s-label' }, 'system'),
                             h('textarea', { className: 'nai-s-in nai-s-mono', rows: 8, readOnly: true, value: presetPreview.system ?? '' })
                           ),
+                          presetPreview.toolCall === true && presetPreview.tool !== null
+                            ? h(
+                                'label',
+                                { className: 'nai-s-field' },
+                                h('span', { className: 'nai-s-label' }, 'tool (submit_caption)'),
+                                h('textarea', {
+                                  className: 'nai-s-in nai-s-mono',
+                                  rows: 10,
+                                  readOnly: true,
+                                  value: JSON.stringify(presetPreview.tool, null, 2)
+                                })
+                              )
+                            : null,
                           (presetPreview.messages ?? []).map((message, index) =>
                             h(
                               'label',

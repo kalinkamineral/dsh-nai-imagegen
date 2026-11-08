@@ -1,11 +1,11 @@
-## dsh-nai-imagegen v0.9.4
+## dsh-nai-imagegen v0.9.5
 
-### 怎么确认预设真的生效了
+### 提示词 → 工具调用工作流
 
-- **预览**：设置 → 提示词预设 → 选中预设 → 「预览当前预设」，直接看到本次会发送的 system 与 user/assistant 消息。
-- **日志**：写词记录里新增 `preset: { kind, id, name, builtin }`，成功摘要会写「预设「X」」；`GET /logs` 或面板日志页可直接核对。
-- **接口返回值**：`POST /write` 返回 `preset`。
-- 手工编辑 `presets.json` 后无需重启，文件 mtime 变化会自动重载。
+- 新增 `docs/prompt-tool-workflow.md`：变量注入 → 预设段组装 → 工具契约 → 解析 → 校验 → 回填/出图，含两种模式选择、失败重试与验证方式。
+- `submit_caption` 工具的描述与字段说明补全：英文标签、scene/char 分工、≤6 角色、坐标规则，工具模式只靠 schema 也能写对。
+- 预设「预览当前预设」现在同时显示工具 schema（工具模式开启时）。
+- `nai_write_prompt` 输出末尾标注使用的预设名。
 
 ### 安装
 
@@ -18,7 +18,7 @@ DSH Go：把仓库放到手机的 `/root/.dsh/dsh-go/plugins/`，重启引擎。
 
 ### 分享版（附件）
 
-`dsh-nai-imagegen-friend-v0.9.4.zip`：只有插件本体 + 安装说明，不含任何 token、画师串、作品预览。
+`dsh-nai-imagegen-friend-v0.9.5.zip`：只有插件本体 + 安装说明，不含任何 token、画师串、作品预览。
 
 ### 验证
 

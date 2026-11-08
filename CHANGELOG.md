@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-09 · 0.9.5
+
+### Added
+
+- **提示词 → 工具调用工作流文档**：`docs/prompt-tool-workflow.md`，说明变量注入、预设段组装、工具契约、两种模式、失败重试与验证方式。
+- **工具契约写进 schema**：`submit_caption` 的 description 与字段说明补全（英文标签、scene/char 分工、≤6 角色、坐标规则），工具模式下模型只靠 schema 也能写对。
+- **预览显示工具**：`POST /presets/preview` 返回 `toolCall` 与当前 `tool` schema，面板预览里可以直接看到本次会发送的工具定义。
+- `nai_write_prompt` 的输出末尾标注实际使用的预设名。
+
 ## 2026-11-09 · 0.9.4
 
 ### Added

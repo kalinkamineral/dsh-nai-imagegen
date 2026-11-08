@@ -36,6 +36,7 @@ import { applyUcPreset, ucPresetText } from './lib/uc-presets.js'
 import { qualityTagText } from './lib/quality-tags.js'
 import { llmModels, llmStatus } from './lib/llm.js'
 import {
+  CAPTION_TOOL,
   createPreset,
   deletePreset,
   renderTemplate,
@@ -2846,7 +2847,8 @@ export function apply(ctx) {
         }
         if (String(result.analysis ?? '').trim() !== '') lines.push(`分析：${result.analysis}`)
         if (result.size && Number(result.size.width) > 0) lines.push(`尺寸：${result.size.width}x${result.size.height}`)
-        lines.push('')
+        if (result.preset?.name) lines.push('')
+        if (result.preset?.name) lines.push(`预设：${result.preset.name}${result.preset.builtin ? '（内置）' : ''}`)
         lines.push('（未出图；把正向提示词交给 nai_generate 即可）')
         return lines.join('\n')
       }
@@ -3231,9 +3233,13 @@ export function apply(ctx) {
           .filter((segment) => segment.enabled !== false)
           .map((segment) => ({ ...segment, content: renderTemplate(segment.content, vars) }))
           .filter((segment) => segment.content.trim() !== '')
+        const config = await load()
+        const toolCall = config.writerToolCall === true
         return sendJson(res, 200, {
           kind,
           preset: { id: preset.id, name: preset.name, builtin: preset.builtin === true },
+          toolCall,
+          tool: toolCall ? CAPTION_TOOL : null,
           system: rendered
             .filter((segment) => segment.role === 'system')
             .map((segment) => segment.content)
