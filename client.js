@@ -1339,6 +1339,17 @@ window.__ModuleLoader__.load({
       const acts = document.createElement('div')
       acts.className = 'nai-s-viewer-acts'
       bar.append(acts)
+      // The head's close can sit off-screen when the page is taller than the
+      // WebView viewport (a fixed overlay inside a transformed page does that), so
+      // the bottom row carries its own 关闭.
+      const closeHere = document.createElement('button')
+      closeHere.type = 'button'
+      closeHere.className = 'nai-s-btn'
+      closeHere.dataset.size = 's'
+      closeHere.dataset.kind = 'danger'
+      closeHere.textContent = t('i2iClose')
+      closeHere.addEventListener('click', () => close())
+      acts.append(closeHere)
 
       const button = (label, onClick, kind) => {
         const node = document.createElement('button')
@@ -1368,10 +1379,32 @@ window.__ModuleLoader__.load({
       closeButton.addEventListener('click', () => close())
       head.append(closeButton)
 
-      const download = document.createElement('a')
-      download.className = 'nai-s-btn'
-      download.dataset.size = 's'
-      download.textContent = t('sideViewerDownload')
+      // Saving used to be an <a download>; Android WebView ignores the attribute and
+      // (with the attachment header) simply navigated the page to the picture, which
+      // is a dead end with no back button. Fetch the bytes and hand the browser a
+      // blob instead: a real browser saves it, a WebView that cannot download stays
+      // on the page.
+      const download = button(t('sideViewerDownload'), async () => {
+        const entry = entries[index]
+        if (!entry) return
+        try {
+          const response = await fetch(entry.src)
+          if (!response.ok) throw new Error(String(response.status))
+          const blob = await response.blob()
+          const url = URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = entry.name || 'nai.png'
+          document.body.append(link)
+          link.click()
+          link.remove()
+          setTimeout(() => URL.revokeObjectURL(url), 4000)
+          flash(download, t('sideCopied'))
+        } catch {
+          flash(download, t('sideViewerNoMeta'))
+        }
+      })
+      download.setAttribute('aria-label', t('sideViewerDownload'))
       const copy = button(t('sideViewerCopy'), async () => {
         const text = String(meta?.request?.prompt ?? '')
         if (text === '') return flash(copy, t('sideViewerNoMeta'))
@@ -1501,7 +1534,9 @@ window.__ModuleLoader__.load({
         const gallery = entry.kind === 'gallery'
         img.src = entry.src
         img.setAttribute('data-nai-name', entry.name)
-        download.href = entry.src
+        // The engine marks `?download=1` as an attachment; without it an Android
+        // WebView ignores the `download` attribute and the tap does nothing.
+        download.href = entry.src.includes('?') ? `${entry.src}&download=1` : `${entry.src}?download=1`
         download.setAttribute('download', entry.name)
         name.textContent = gallery ? `${index + 1} / ${entries.length} · ${entry.name}` : entry.name
         detail.textContent = gallery ? '' : t(`sideViewerKind${entry.kind === 'character' ? 'Character' : 'Artist'}`)
@@ -1891,10 +1926,10 @@ button.nai-s-pill:focus-visible{outline:none;box-shadow:var(--focus)}
 .nai-s-drop>img{max-width:100%;max-height:220px;border-radius:8px;object-fit:contain}
 .nai-s-artedit{display:flex;flex-direction:column;gap:8px;padding:10px;border-top:1px solid var(--line-soft);background:var(--wash)}
 .nai-s-badge{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:9px;background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn);font-size:10.5px;font-weight:600}
-.nai-s-viewer{position:fixed;inset:0;z-index:2147483200;display:grid;place-items:center;padding:4vh 3vw;background:rgba(8,9,11,.52);backdrop-filter:blur(7px);color:#f3f4f6;--ink:#f3f4f6;--ink2:#d1d5db;--ink3:#9ca3af;--paper:rgba(32,33,36,.92);--wash:rgba(255,255,255,.06);--line:rgba(255,255,255,.16);--line-strong:rgba(255,255,255,.28);--hover:rgba(255,255,255,.08);--press:rgba(255,255,255,.14);opacity:0;transition:opacity .16s ease}
+.nai-s-viewer{position:fixed;inset:0;width:100%;height:100dvh;z-index:2147483200;display:grid;place-items:center;padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));background:rgba(8,9,11,.52);backdrop-filter:blur(7px);color:#f3f4f6;--ink:#f3f4f6;--ink2:#d1d5db;--ink3:#9ca3af;--paper:rgba(32,33,36,.92);--wash:rgba(255,255,255,.06);--line:rgba(255,255,255,.16);--line-strong:rgba(255,255,255,.28);--hover:rgba(255,255,255,.08);--press:rgba(255,255,255,.14);opacity:0;transition:opacity .16s ease}
 .nai-s-viewer.is-open{opacity:1}
 .nai-s-viewer.is-closing{opacity:0;transition-duration:.12s}
-.nai-s-viewer-panel{display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;width:min(94vw,980px);height:min(88vh,760px);overflow:hidden;border-radius:16px;background:#111318;box-shadow:0 28px 80px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.08);transform:scale(.97) translateY(6px);transition:transform .2s cubic-bezier(.16,1,.3,1)}
+.nai-s-viewer-panel{display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;width:min(94vw,980px);height:min(88dvh,760px);max-height:100%;overflow:hidden;border-radius:16px;background:#111318;box-shadow:0 28px 80px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.08);transform:scale(.97) translateY(6px);transition:transform .2s cubic-bezier(.16,1,.3,1)}
 .nai-s-viewer.is-open .nai-s-viewer-panel{transform:none}
 .nai-s-viewer.is-closing .nai-s-viewer-panel{transform:scale(.98);transition-duration:.12s}
 .nai-s-viewer-head{display:flex;align-items:center;gap:12px;padding:10px 10px 10px 14px;border-bottom:1px solid rgba(255,255,255,.1)}
@@ -1923,13 +1958,13 @@ button.nai-s-pill:focus-visible{outline:none;box-shadow:var(--focus)}
 .nai-s-viewer-cell:hover{opacity:.85}
 .nai-s-viewer-cell[aria-selected="true"]{opacity:1;box-shadow:0 0 0 2px #fff;transform:translateY(-2px)}
 .nai-s-viewer-cell:focus-visible{outline:none;box-shadow:0 0 0 2px #fff}
-.nai-s-viewer-bar{display:flex;align-items:center;padding:8px 12px;background:rgba(255,255,255,.04);border-top:1px solid rgba(255,255,255,.08)}
+.nai-s-viewer-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 12px;max-height:38dvh;overflow-y:auto;background:rgba(255,255,255,.04);border-top:1px solid rgba(255,255,255,.08)}
 .nai-s-viewer-acts{display:flex;flex-wrap:wrap;gap:6px}
 .nai-s-viewer-acts [hidden]{display:none!important}
 .nai-s-viewer .nai-s-btn{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);color:#f3f4f6;text-decoration:none}
 .nai-s-viewer .nai-s-btn:hover:not(:disabled){background:rgba(255,255,255,.16)}
 .nai-s-viewer .nai-s-btn[data-kind="danger"]{color:#ffb4ae;border-color:rgba(255,120,110,.4)}
-@media (max-width:720px){.nai-s-viewer{padding:2vh 2vw}.nai-s-viewer-panel{width:98vw;height:94vh;border-radius:12px}.nai-s-viewer-stage{padding:8px 34px}.nai-s-viewer-nav{width:30px;height:44px;font-size:20px}.nai-s-viewer-head{padding:8px}.nai-s-viewer-close{padding:0 10px}}
+@media (max-width:720px){.nai-s-viewer{padding:max(6px,env(safe-area-inset-top)) 6px max(6px,env(safe-area-inset-bottom))}.nai-s-viewer-panel{width:100%;height:min(96dvh,100%);border-radius:12px}.nai-s-viewer-acts{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}.nai-s-viewer-stage{padding:8px 34px}.nai-s-viewer-nav{width:30px;height:44px;font-size:20px}.nai-s-viewer-head{padding:8px}.nai-s-viewer-close{padding:0 10px}}
 .nai-s-body{container-type:inline-size}
 .nai-s-flash-link{flex:none;border:0;background:none;color:inherit;font:inherit;font-size:12px;font-weight:600;text-decoration:underline;text-underline-offset:2px;cursor:pointer;opacity:1!important;padding:0 2px}
 .nai-s-failcard{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--bad) 35%,var(--line));border-radius:var(--r-md);background:color-mix(in srgb,var(--bad) 5%,var(--paper));animation:nai-rise-in .2s cubic-bezier(.16,1,.3,1) both}
@@ -8674,6 +8709,10 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
     }
 
     function apply(ctx) {
+      // The stylesheet used to be installed only by the sidebar tab's body, so the
+      // plugin *page* (`main` slot) rendered as unstyled text. Install it once here,
+      // before anything can draw.
+      ensureSideStyles()
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-nai-imagegen: dictionaries')
       const t = ctx.locale.bind(NS)
       // The transcript scanner is opt-in (config `codeButtons`, default off).
@@ -8707,7 +8746,12 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
             key: PANEL_ID,
             locale: NS
           },
-          NaiPanel
+          // Belt and braces: an HMR reload replaces the module while the old <style>
+          // node stays, so re-assert it when the page itself is drawn.
+          (props) => {
+            ensureSideStyles()
+            return h(NaiPanel, props)
+          }
         )
       )
 

@@ -27,3 +27,7 @@ logs/
 
 # release bundle build output
 dist/
+
+# Generated previews (thumbnails and save-ready copies) — never commit user art
+assets/thumbs/
+assets/full/

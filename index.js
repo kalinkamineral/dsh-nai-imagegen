@@ -38,6 +38,7 @@ import { llmModels, llmStatus } from './lib/llm.js'
 import { dnaFromImage, loadPresets, resetPreset, savePresets, writePrompt } from './lib/writer.js'
 import { editCharacter, mergeEditDraft } from './lib/character-edit.js'
 import { STUDIO_SIZES, estimateView, formatBytes, generateView, listItems, nativePanelView, panelView, probeView, studioView, stripText, toolCard } from './lib/dsh-go.js'
+import { fullIndex, fullRef, thumbRef } from './lib/thumbs.js'
 import {
   characterCoverFile,
   deleteCharacter,
@@ -168,6 +169,13 @@ async function withRenderMeta(directory, rows) {
 }
 
 /**
+ * The name `persist` gives a render: a timestamp, an optional batch index,
+ * then `.png`. `enforceKeepImages` uses it so the auto-prune only ever
+ * deletes files this plugin wrote.
+ */
+const RENDER_NAME = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z(?:-\d+)?\.png$/
+
+/**
  * Delete gallery PNGs, and a batch's sidecar once no PNG of that batch is left.
  * Covers copied from a render are separate files and stay.
  * @param directory - the output directory.
@@ -214,7 +222,10 @@ async function enforceKeepImages(config, outputDir) {
   if (!Number.isInteger(keep) || keep <= 0) return
   try {
     const all = await listImages(outputDir, { limit: Number.MAX_SAFE_INTEGER, extensions: ['.png'], all: true })
-    if (all.files.length > keep) await deleteRenders(outputDir, all.files.slice(keep).map((row) => row.name))
+    // Only files this plugin named: the output directory can be shared storage,
+    // and pruning must never touch a PNG the user (or another tool) put there.
+    const own = all.files.filter((row) => RENDER_NAME.test(row.name))
+    if (own.length > keep) await deleteRenders(outputDir, own.slice(keep).map((row) => row.name))
   } catch {
     /* extra files stay; the next save tries again */
   }
@@ -1085,6 +1096,10 @@ async function renderNow(options) {
   const config = await load()
   const outputDir = await outputDirOf(config)
   const sourceDir = await sourceDirOf(config)
+  // The gallery may live on shared storage (/sdcard/Download/DSH-Go) where a
+  // cleaner can remove the directory between renders; `persist` writes with
+  // `writeFile`, which does not create parents.
+  await mkdir(outputDir, { recursive: true }).catch(() => {})
 
   // 「替换角色关键词」: every keyword of an active character inside the prompt is
   // replaced by that character's fixed features before anything else happens —
@@ -1332,7 +1347,10 @@ async function renderNow(options) {
             .join(', '),
     ucPreset,
     nSamples: 1,
-    seed: options.seed,
+    // `undefined` here would reach the tool result and fail the host's
+    // lossless-JSON check with 「returned invalid output」 even though the PNG
+    // was written.
+    seed: options.seed ?? null,
     // Sampling knobs: per call first, then the configured default. The schedule
     // is recorded as sent (V5 forces karras), variety as asked — buildPayload
     // drops it for models other than 4.5.
@@ -1357,13 +1375,13 @@ async function renderNow(options) {
     ...(baseImage === null
       ? {}
       : maskImage === null
-        ? { action: 'img2img', image: baseImage.base64, strength: options.strength, noise: options.noise }
+        ? { action: 'img2img', image: baseImage.base64, strength: options.strength ?? null, noise: options.noise ?? null }
         : {
             action: 'infill',
             image: baseImage.base64,
             mask: maskImage.base64,
-            addOriginalImage: options.addOriginalImage,
-            inpaintStrength: options.inpaintStrength
+            addOriginalImage: options.addOriginalImage ?? null,
+            inpaintStrength: options.inpaintStrength ?? null
           })
   }
   // What the debug log records about this render, filled in before the request so
@@ -1430,6 +1448,10 @@ async function renderNow(options) {
         })
   }
   const files = await persist({ outputDir, images, request })
+  // Keep full-size copies inside the package for the newest renders: the app's
+  // full-screen viewer saves whatever bytes it was given, and that save is the one
+  // route into the phone's album (MediaStore is unreachable from this process).
+  for (const file of files) await fullRef(file.file, file.name).catch(() => null)
   await enforceKeepImages(config, outputDir)
   return {
     files,
@@ -1670,7 +1692,10 @@ function studioStateOf(sessionId) {
  */
 function studioFormDefaults(config) {
   return {
+    // 场景提示词（画面、构图、光线）与角色提示词分开存：渲染时前者作为 caption 的
+    // base，后者每行一个角色，各自带自己的 caption，和网页版工作台一致。
     prompt: '',
+    characters: '',
     negative: '',
     size: '832x1216',
     steps: config.steps,
@@ -1696,16 +1721,56 @@ function studioFormDefaults(config) {
 async function loadStudioCache(config) {
   const outputDir = await outputDirOf(config)
   const sourceDir = await sourceDirOf(config)
-  const [galleryFiles, sourceFiles, artists] = await Promise.all([
+  const [galleryFiles, sourceFiles, artists, characterDoc] = await Promise.all([
     gallery(outputDir, 24).catch(() => []),
     sourceListing(sourceDir, 24).catch(() => []),
-    loadArtists(config).catch(() => ({ entries: [] }))
+    loadArtists(config).catch(() => ({ entries: [] })),
+    loadCharacters().catch(() => ({ characters: [], groups: [] }))
   ])
   const pool = poolFor(config)
+  // Pictures: the native `gallery` component can only reference files through
+  // `asset:` (a data URL would blow the 32 KiB panel budget), so every cover and
+  // every recent shot gets a small WebP beside the package.
+  const characterThumbs = new Map()
+  const full = await fullIndex().catch(() => new Map())
+  const shotThumbs = new Map()
+  // Filled in the background: the first open of the panel must paint the form
+  // immediately, and generating sixteen WebPs takes seconds on a phone. The 1 s
+  // tick picks the pictures up as they appear. The delay keeps the very first two
+  // ticks cheap, so the form is on screen before the encoder starts working.
+  setTimeout(() => { void (async () => {
+    for (const row of characterDoc.characters ?? []) {
+      const ref = await thumbRef(characterCoverFile(row.id), `char-${row.id}`).catch(() => null)
+      if (ref !== null) characterThumbs.set(row.id, ref)
+    }
+    // Every picture the grid can show also gets a save-ready copy, so tapping any
+    // of them opens the app's viewer on the full picture, not a 360 px thumbnail.
+    // Four per pass: a cold panel must not spend seconds encoding while the form
+    // is trying to paint. The next tick picks up the next four.
+    const missing = galleryFiles
+      .slice(0, 24)
+      .filter((row) => !full.has(row.name))
+      .slice(0, 4)
+    for (const row of missing) {
+      const ref = await fullRef(join(outputDir, row.name), row.name).catch(() => null)
+      if (ref !== null) full.set(row.name, ref)
+    }
+    for (const row of galleryFiles.slice(0, 24)) {
+      const ref = await thumbRef(join(outputDir, row.name), `shot-${row.name}`).catch(() => null)
+      if (ref !== null) shotThumbs.set(row.name, ref)
+    }
+  })() }, 1200)
   return {
     gallery: galleryFiles,
+    characterThumbs,
+    shotThumbs,
+    full,
     sources: sourceFiles,
     artists: artists.entries ?? [],
+    // The character library lives here too: the 5-tab panel dropped the old
+    // 角色库 list, and without it the DNA entries have no native entry point.
+    characters: characterDoc.characters ?? [],
+    groups: characterDoc.groups ?? [],
     keys: pool.list(),
     keySummary: pool.healthSummary(),
     libItems: [],
@@ -1810,6 +1875,16 @@ function studioSnapshot(state, config) {
     }
   }
   const keySummary = cache.keySummary ?? null
+  // The app may report no component list at all (this build sends none). Treating
+  // that as "cannot draw pictures" emptied the whole gallery; only an explicit list
+  // that omits `gallery` should fall back to rows.
+  const advertised = Array.isArray(state.caps?.components) ? state.caps.components : []
+  const galleryOk = advertised.length === 0 ? true : advertised.includes('gallery')
+  const artistQuery = String(state.artistQuery ?? '').trim()
+  const needle = artistQuery.toLowerCase()
+  const artistRows = needle === ''
+    ? cache.artists
+    : cache.artists.filter((row) => `${row.name} ${row.prompt ?? row.positivePrompt ?? ''}`.toLowerCase().includes(needle))
   return {
     form,
     jobText,
@@ -1821,11 +1896,39 @@ function studioSnapshot(state, config) {
     writerBusy,
     writerError,
     artistText: `当前画师串：${activeArtist?.name ?? '未选择'}（共 ${cache.artists.length} 个）`,
-    artists: cache.artists.slice(0, 20).map((row) => ({
+    // 画师串搜索：名字和提示词都参与匹配，和网页版的 searchArtists 一致。
+    artistQuery,
+    artistsText: artistQuery === ''
+      ? `画师串 ${cache.artists.length} 个，显示前 ${Math.min(20, cache.artists.length)} 个`
+      : `匹配 ${artistRows.length} 个 / 共 ${cache.artists.length} 个`,
+    artists: artistRows.slice(0, 20).map((row) => ({
       title: row.name,
       subtitle: Number(row.id) === Number(config.artistId) ? '使用中' : `#${row.id}`,
       action: { id: 'pickArtist', args: { id: Number(row.id) } }
     })),
+    charactersText: `角色库（共 ${(cache.characters ?? []).length} 个，点一下把 DNA 标签写进提示词）`,
+    // 有封面的走 gallery（缩略图），没有封面的退回文字列表——同一个视图里空数组
+    // 什么都不画，所以两段可以并存。
+    characterCards: !galleryOk ? [] : (cache.characters ?? [])
+      .filter((row) => cache.characterThumbs?.has(row.id) === true)
+      .slice(0, 24)
+      .map((row) => ({
+        src: cache.characterThumbs.get(row.id),
+        caption: String(row.name ?? '').slice(0, 40),
+        action: { id: 'useCharacter', args: { id: String(row.id ?? '') } }
+      })),
+    characterItems: (cache.characters ?? [])
+      .filter((row) => !galleryOk || cache.characterThumbs?.has(row.id) !== true)
+      .slice(0, 20)
+      .map((row) => {
+        const group = (cache.groups ?? []).find((entry) => entry.id === row.groupId)
+        const keywords = Array.isArray(row.keywords) ? row.keywords : []
+        return {
+          title: String(row.name ?? ''),
+          subtitle: [group?.name, keywords.slice(0, 4).join(', ')].filter(Boolean).join(' · '),
+          action: { id: 'useCharacter', args: { id: String(row.id ?? '') } }
+        }
+      }),
     edit: { source: edit.source, strength: edit.strength, tool: edit.tool, prompt: edit.prompt },
     editSourceText: edit.source === '' ? '源图：未选择（点选下面列表里的一张）' : `源图：${edit.source}`,
     sources: cache.sources.slice(0, 20).map((row) => ({
@@ -1835,12 +1938,45 @@ function studioSnapshot(state, config) {
     })),
     editText,
     editResults,
-    galleryText: `输出目录最近 ${cache.gallery.length} 张`,
-    galleryItems: cache.gallery.slice(0, 24).map((row) => ({
+    galleryText: `输出目录最近 ${cache.gallery.length} 张 · 点图片打开后右上角保存到相册`,
+    // The newest render shown full-bleed: tapping it opens the app's viewer, whose
+    // 保存 is the only route into the album. The plugin protocol has no "save file"
+    // effect, so the picture itself is the button.
+    latestCard: cache.gallery.length === 0
+      ? null
+      : {
+          src: cache.full?.get(cache.gallery[0].name) ?? cache.shotThumbs?.get(cache.gallery[0].name) ?? null,
+          caption: `最新作品 · 点下方网格可打开并保存到相册`
+        },
+    // Thumbnails first; the text list only carries the shots that have none (or
+    // every shot on a host without sharp).
+    galleryCards: !galleryOk ? [] : cache.gallery
+      .filter((row) => cache.shotThumbs?.has(row.name) === true)
+      .slice(0, 24)
+      .map((row) => ({
+        // A full copy saves the real picture from the viewer; a thumbnail would
+        // save 360 px. Only the newest few have one.
+        src: cache.full?.get(row.name) ?? cache.shotThumbs.get(row.name),
+        // No action: a cell WITH an action runs it on tap, and only a long press
+        // reaches the app's viewer. Leaving it empty makes a normal tap open the
+        // picture — which is where 保存 to the album lives. Copying a path moved to
+        // the lists below, where it is still one tap.
+        caption: String(row.name ?? '').replace(/\.png$/i, '').slice(0, 40)
+      })),
+    // Everything past the grid's 24 cells still has to be reachable.
+    moreItems: cache.gallery.slice(24, 74).map((row) => ({
       title: String(row.name ?? ''),
       subtitle: formatBytes(Number(row.bytes) || 0),
-      action: { id: 'copyFile', args: { path: String(row.file ?? row.path ?? row.name ?? '') } }
+      action: { id: 'copyFile', args: { path: join(config.outputDir, String(row.name ?? '')) } }
     })),
+    galleryItems: cache.gallery
+      .filter((row) => !galleryOk || cache.shotThumbs?.has(row.name) !== true)
+      .slice(0, 24)
+      .map((row) => ({
+        title: String(row.name ?? ''),
+        subtitle: formatBytes(Number(row.bytes) || 0),
+        action: { id: 'copyFile', args: { path: join(config.outputDir, String(row.name ?? '')) } }
+      })),
     lib: { query: String(state.lib?.query ?? '') },
     libItems: cache.libItems,
     libText: cache.libText,
@@ -1849,6 +1985,27 @@ function studioSnapshot(state, config) {
     doctorText: state.doctorText,
     keysText: keySummary === null ? 'Key 池：未知' : `Key 池：${keySummary.keyCount} 个（可用 ${keySummary.usableKeyCount}）`
   }
+}
+
+/**
+ * The Danbooru tags that carry a character's look.
+ *
+ * `fixedFeatures` is written as a Chinese description plus a final
+ * `外观标签：<tags>` line; that line is what a render actually reads. Entries
+ * written before that convention fall back to their keyword list.
+ *
+ * @param row - one character from `characters.json`.
+ * @returns a comma-separated tag string.
+ */
+function characterTags(row) {
+  const lines = String(row?.fixedFeatures ?? '').split('\n').map((line) => line.trim())
+  const tagged = lines.find((line) => line.startsWith('外观标签'))
+  if (tagged !== undefined) {
+    const value = tagged.replace(/^外观标签\s*[:：]\s*/, '').trim()
+    if (value !== '') return value
+  }
+  const keywords = Array.isArray(row?.keywords) ? row.keywords : []
+  return (keywords.length > 0 ? keywords : [String(row?.name ?? '')]).join(', ')
 }
 
 /**
@@ -1893,15 +2050,18 @@ export function applyWriterResult(state, result) {
   if (form === null) return
   const caption = result?.caption
   if (caption !== null && typeof caption === 'object') {
-    const parts = [String(caption.base ?? '').trim()].filter((text) => text !== '')
+    const scene = String(caption.base ?? '').trim()
     const negatives = [String(caption.baseNegative ?? '').trim()].filter((text) => text !== '')
+    const characterLines = []
     for (const row of Array.isArray(caption.characters) ? caption.characters : []) {
       const positive = String(row?.positive ?? '').trim()
-      if (positive !== '') parts.push(positive)
+      if (positive !== '') characterLines.push(positive)
       const negative = String(row?.negative ?? '').trim()
       if (negative !== '') negatives.push(negative)
     }
-    if (parts.length > 0) form.prompt = parts.join(', ')
+    // 场景进场景框，角色进角色框（每行一个），不再压成一条。
+    if (scene !== '') form.prompt = scene
+    form.characters = characterLines.join('\n')
     if (negatives.length > 0) form.negative = appendPromptText(form.negative, negatives.join(', '))
   }
   const width = Number(result?.size?.width)
@@ -2759,7 +2919,7 @@ export function apply(ctx) {
         'Change the NovelAI plugin configuration. Only the fields you pass are replaced. Use this to set the token, default size, model, output directory or library directories from the conversation instead of the panel.',
       parameters: {
         token: { type: 'string', description: 'NovelAI persistent API token. Stored in $DSH_HOME/nai-imagegen/config.json.' },
-        base_url: { type: 'string', description: 'API base, default https://image.novelai.net' },
+        base_url: { type: 'string', description: 'API base. Empty (or clearing it) falls back to the official https://image.novelai.net.' },
         model: { type: 'string', description: 'Default model id.' },
         width: { type: 'integer', description: 'Default width.' },
         height: { type: 'integer', description: 'Default height.' },
@@ -3500,11 +3660,18 @@ export function apply(ctx) {
         const outputDir = await outputDirOf(config)
         const file = safeJoin(outputDir, url.searchParams.get('name'))
         const bytes = await readFile(file)
-        res.writeHead(200, {
+        const headers = {
           'Content-Type': 'image/png',
           'Cache-Control': 'no-store',
           'Content-Length': bytes.length
-        })
+        }
+        // `?download=1` asks for a file rather than a picture to render: a WebView
+        // only hands the tap to the system downloader when the response says so.
+        // (The page's <a download> attribute alone is ignored by Android WebView.)
+        if (url.searchParams.get('download') === '1') {
+          headers['Content-Disposition'] = `attachment; filename="${basename(file).replace(/[^A-Za-z0-9._-]/g, '_')}"`
+        }
+        res.writeHead(200, headers)
         return res.end(bytes)
       }
 
@@ -3886,6 +4053,22 @@ export function apply(ctx) {
         const push = async () => {
           try {
             const config = await load()
+            // What this app version can draw decides whether pictures are cards or
+            // plain rows; the actions re-emit the same snapshot, so keep it.
+            state.caps = caps
+            // One line per panel open, so the capabilities the app reported can be
+            // read back from the debug log when a picture does not show up.
+            if (state.capsLogged !== true) {
+              state.capsLogged = true
+              logEvent('panel:caps', {
+                level: 'info',
+                summary: `面板组件能力：${Array.isArray(caps?.components) ? caps.components.join(',') : '(none)'}`,
+                app: String(caps?.app ?? ''),
+                protocol: Number(caps?.protocol) || null,
+                hasGallery: Array.isArray(caps?.components) && caps.components.includes('gallery'),
+                hasImage: Array.isArray(caps?.components) && caps.components.includes('image')
+              })
+            }
             if (state.form === null) state.form = studioFormDefaults(config)
             if (state.cache === null) state.cache = await loadStudioCache(config)
             const snapshot = studioSnapshot(state, config)
@@ -3927,6 +4110,10 @@ export function apply(ctx) {
             state.lib.query = String(value ?? '')
             return undefined
           }
+          if (bind === 'data.lib.artistQuery') {
+            state.artistQuery = String(value ?? '')
+            return undefined
+          }
           if (bind.startsWith('data.settings.')) {
             if (state.settings === null) state.settings = {}
             state.settings[bind.slice('data.settings.'.length)] = value
@@ -3943,7 +4130,19 @@ export function apply(ctx) {
           if (state.job?.status === 'running') return { toast: '正在生成，先等这一张' }
           const form = state.form
           const prompt = String(form.prompt ?? '').trim()
-          if (prompt === '') return { toast: '先写提示词' }
+          const characterLines = String(form.characters ?? '')
+            .split('\n')
+            .map((line) => line.replace(/^\s*Char\d+\s*[:：]\s*/i, '').trim())
+            .filter((line) => line !== '')
+          if (prompt === '' && characterLines.length === 0) return { toast: '先写场景或角色提示词' }
+          // 角色行交给工作台的 caption 通道：每个角色保留自己的正向/负面与位置，
+          // 而不是被拼进同一段场景文字里。
+          const caption = characterLines.length === 0
+            ? undefined
+            : {
+                base: prompt,
+                characters: characterLines.map((line, index) => ({ name: `Char${index + 1}`, positive: line, center: null }))
+              }
           const [width, height] = (form.size ?? '832x1216').split('x').map(Number)
           const controller = new AbortController()
           const job = { status:'running', startedAt: Date.now(), received:0, total:null, files:[], error:'', controller }
@@ -3951,6 +4150,7 @@ export function apply(ctx) {
           job.weight = costWeight({ width, height, steps: Number(form.steps) || config.steps, nSamples: Math.min(config.maxImagesPerCall, Math.max(1, Number(form.n) || 1)) })
           renderLogged('panel:create', {
             prompt,
+            ...(caption === undefined ? {} : { caption }),
             negativePrompt: String(form.negative ?? '').trim() || undefined,
             width, height,
             steps: Number(form.steps) || config.steps,
@@ -3984,6 +4184,21 @@ export function apply(ctx) {
           const state = studioStateOf(scope?.sessionId)
           if (state.job?.status === 'running') state.job.controller.abort()
           return { toast: '已取消' }
+        },
+        // Tap a character in 创作: put the name into the natural-language box, so
+        // 「AI 写词」 writes the scene and her DNA in one pass, instead of dumping
+        // a wall of tags into the prompt behind the user's back.
+        useCharacter: async (scope, event) => {
+          const state = studioStateOf(scope?.sessionId)
+          const id = String(event?.value?.id ?? '')
+          const row = (state.cache?.characters ?? []).find((entry) => String(entry.id) === id)
+          if (row === undefined) return { toast: '角色不在了' }
+          const name = String(row.name ?? '').trim()
+          if (name === '') return { toast: '这个角色没有名字' }
+          const draft = String(state.writerDraft ?? '').trim()
+          if (draft.includes(name)) return { toast: '描述里已经有她了' }
+          state.writerDraft = draft === '' ? name : `${draft}，${name}`
+          return { patch: studioSnapshot(state, await load()), toast: `已把 ${name} 加进描述，点 AI 写词` }
         },
         write: async (scope) => {
           const state = studioStateOf(scope?.sessionId)

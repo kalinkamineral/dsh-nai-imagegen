@@ -665,8 +665,10 @@ await check('the studio panel keeps typed values and refuses an empty prompt', a
   assert.match(String(cancelled.toast ?? ''), /取消/)
 })
 
-await check('writer results flatten into the workbench form', () => {
-  const state = { form: { prompt: '', negative: 'lowres', size: '832x1216' } }
+await check('writer results split into scene and character fields', () => {
+  // Local change: the workbench keeps 场景 / 角色 in separate fields, so the writer
+  // puts `base` in the scene box and each character caption on its own line.
+  const state = { form: { prompt: '', characters: '', negative: 'lowres', size: '832x1216' } }
   applyWriterResult(state, {
     caption: {
       base: '1girl, rooftop',
@@ -675,7 +677,8 @@ await check('writer results flatten into the workbench form', () => {
     },
     size: { width: 1216, height: 832 }
   })
-  assert.equal(state.form.prompt, '1girl, rooftop, red hair')
+  assert.equal(state.form.prompt, '1girl, rooftop')
+  assert.equal(state.form.characters, 'red hair')
   assert.equal(state.form.negative, 'lowres, blurry, hat')
   assert.equal(state.form.size, '1216x832')
 
