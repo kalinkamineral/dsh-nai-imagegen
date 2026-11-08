@@ -21,6 +21,8 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAME = 'dsh-nai-imagegen-friend'
 SKIP_DIRS = {'.git', '.github', 'node_modules', '_in', 'logs', 'dist', '__pycache__'}
+# Generated previews and save-ready copies are the user's art, not code.
+SKIP_PREFIXES = ('assets/thumbs/', 'assets/full/')
 SKIP_FILES = {'.gitignore', '.gitattributes'}
 
 
@@ -44,7 +46,10 @@ def main():
                 if name in SKIP_FILES or name.endswith('.orig'):
                     continue
                 rel = os.path.normpath(os.path.join(rel_dir, name)) if rel_dir != '.' else name
-                arc = f'{NAME}/plugin/dsh-nai-imagegen/{rel.replace(os.sep, "/")}'
+                rel_path = rel.replace(os.sep, '/')
+                if any(rel_path.startswith(prefix) for prefix in SKIP_PREFIXES):
+                    continue
+                arc = f'{NAME}/plugin/dsh-nai-imagegen/{rel_path}'
                 archive.write(os.path.join(dirpath, name), arc)
     print(f'{out} ({os.path.getsize(out)} bytes)')
 

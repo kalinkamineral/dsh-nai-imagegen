@@ -710,6 +710,14 @@ await check('the native panel mirrors the sidebar as five tabs inside the budget
   }
 })
 
+await check('an empty component list means unknown, not unsupported', () => {
+  const view = nativePanelView({ locale: 'zh', components: [] })
+  assert.equal(view.v, 2)
+  assert.ok(collectNodes(view).some((node) => node.type === 'form'))
+  const explicit = nativePanelView({ locale: 'zh', components: ['stack', 'text', 'callout'] })
+  assert.equal(explicit.v, 1)
+})
+
 await check('the native panel degrades to v1 on an app without inputs', async () => {
   const view = nativePanelView({ locale: 'zh', components: ['stack', 'text', 'callout', 'list', 'actions'] })
   assert.equal(view.v, 1)
