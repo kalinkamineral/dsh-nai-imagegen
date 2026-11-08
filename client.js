@@ -455,6 +455,16 @@ window.__ModuleLoader__.load({
       sidePresetWriteHint: '可用变量：{{用户描述}} {{角色库}} {{参考条目}} {{画面尺寸}}。输出必须是 scene / scene_uc / char / char_uc 这些字段。',
       sidePresets: '提示词预设',
       sidePresetsSum: '写提示词 · 图片生成 DNA',
+      sidePresetActive: '当前预设',
+      sidePresetName: '预设名称',
+      sidePresetBuiltin: '内置',
+      sidePresetCustom: '自定义',
+      sidePresetDuplicate: '复制为自定义',
+      sidePresetDuplicateHint: '以内置或当前预设为模板，另存为可编辑的自定义预设',
+      sidePresetDelete: '删除',
+      sidePresetExport: '导出',
+      sidePresetImport: '导入',
+      sidePresetNamedHint: '内置预设随插件更新且只读；修改后点「保存」会自动另存为自定义预设。',
       sideRefImage: '参考图',
       sideRefPick: '本次参考',
       sideRefPickHint: '写提示词时把这条原文一起交给模型',
@@ -978,6 +988,16 @@ window.__ModuleLoader__.load({
       sidePresetWriteHint: 'Variables: {{用户描述}} {{角色库}} {{参考条目}} {{画面尺寸}}. Output must use the scene / scene_uc / char / char_uc fields.',
       sidePresets: 'Prompt presets',
       sidePresetsSum: 'write prompt · DNA from image',
+      sidePresetActive: 'Active preset',
+      sidePresetName: 'Preset name',
+      sidePresetBuiltin: 'built-in',
+      sidePresetCustom: 'custom',
+      sidePresetDuplicate: 'Duplicate as custom',
+      sidePresetDuplicateHint: 'Copy the current preset into an editable custom one',
+      sidePresetDelete: 'Delete',
+      sidePresetExport: 'Export',
+      sidePresetImport: 'Import',
+      sidePresetNamedHint: 'Built-in presets follow plugin updates and are read-only; pressing Save after editing creates a custom copy automatically.',
       sideRefImage: 'Reference',
       sideRefPick: 'Use as reference',
       sideRefPickHint: 'Send this entry\'s text to the prompt writer',
@@ -2234,8 +2254,10 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
       const [llmInfo, setLlmInfo] = React.useState(null)
       const [llmModelList, setLlmModelList] = React.useState(null)
       const [presetData, setPresetData] = React.useState(null)
-      const [presetDraft, setPresetDraft] = React.useState(null)
       const [presetTab, setPresetTab] = React.useState('write')
+      /** The preset being edited: id + editable copy of its text. */
+      const [presetEdit, setPresetEdit] = React.useState({ id: '', name: '', system: '', user: '', builtin: false })
+      const presetFileInput = React.useRef(null)
       const [charDoc, setCharDoc] = React.useState(null)
       const [charQuery, setCharQuery] = React.useState('')
       const [charEdit, setCharEdit] = React.useState(null)
@@ -3163,15 +3185,25 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           setMarket({ catalog: null, error: routeError(err) })
         }
       }, [])
+      /** The active preset entry of one kind, or null. */
+      const presetItemOf = (data, kind) => {
+        const view = data?.kinds?.[kind]
+        return view?.items?.find((row) => row.id === view.activeId) ?? view?.items?.[0] ?? null
+      }
+      /** Load the named-preset list; the active entry becomes the editor draft. */
       const loadPresets = React.useCallback(async () => {
         try {
           const body = await api('/presets')
           setPresetData(body)
-          setPresetDraft(JSON.parse(JSON.stringify(body.presets ?? {})))
         } catch (err) {
           setPresetData({ error: routeError(err) })
         }
       }, [])
+      React.useEffect(() => {
+        const item = presetItemOf(presetData, presetTab)
+        if (item === null) return
+        setPresetEdit({ id: item.id, name: item.name, system: item.system, user: item.user, builtin: item.builtin === true })
+      }, [presetData, presetTab])
       React.useEffect(() => {
         if (!side) return
         loadLlm()
@@ -4002,27 +4034,62 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
         })
       }
 
-      // ---- prompt presets ----
-      const onPresetSave = async () => {
+      // ---- named prompt presets ----
+      const applyPresetList = (body) => {
+        setPresetData(body.list ?? body)
+        const item = presetItemOf(body.list ?? body, presetTab)
+        if (item !== null) setPresetEdit({ id: item.id, name: item.name, system: item.system, user: item.user, builtin: item.builtin === true })
+        return item
+      }
+      const onPresetAction = async (route, payload, note) => {
         setBusy('presets')
         setError('')
         try {
-          const body = await api('/presets', { method: 'POST', body: JSON.stringify(presetDraft ?? {}) })
-          setPresetData(body)
-          setPresetDraft(JSON.parse(JSON.stringify(body.presets ?? {})))
-          setNotice(t('saved'))
+          applyPresetList(await api(route, { method: 'POST', body: JSON.stringify(payload) }))
+          if (note !== undefined) setNotice(note)
         } catch (err) {
           setError(routeError(err))
         } finally {
           setBusy('')
         }
       }
-      const onPresetReset = async (name) => {
-        setBusy('presets')
+      const onPresetSelect = (id) => onPresetAction('/presets/select', { kind: presetTab, id })
+      const onPresetSave = () =>
+        onPresetAction(
+          '/presets/save',
+          { kind: presetTab, id: presetEdit.id, name: presetEdit.name, system: presetEdit.system, user: presetEdit.user },
+          t('saved')
+        )
+      const onPresetDuplicate = () =>
+        onPresetAction('/presets/duplicate', { kind: presetTab, fromId: presetEdit.id, name: `${presetEdit.name} 副本` }, t('saved'))
+      const onPresetDelete = () => onPresetAction('/presets/delete', { kind: presetTab, id: presetEdit.id }, t('saved'))
+      const onPresetReset = () => onPresetAction('/presets/reset', { kind: presetTab })
+      const onPresetExport = async () => {
         try {
-          const body = await api('/presets/reset', { method: 'POST', body: JSON.stringify({ name }) })
-          setPresetData(body)
-          setPresetDraft(JSON.parse(JSON.stringify(body.presets ?? {})))
+          const body = await api('/presets/export')
+          const blob = new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' })
+          const url = URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = 'nai-writer-presets.json'
+          document.body.append(link)
+          link.click()
+          link.remove()
+          setTimeout(() => URL.revokeObjectURL(url), 4000)
+        } catch (err) {
+          setError(routeError(err))
+        }
+      }
+      const onPresetImportChosen = async (event) => {
+        const file = event.target.files?.[0]
+        event.target.value = ''
+        if (!file) return
+        setBusy('presets')
+        setError('')
+        try {
+          const document = JSON.parse(await file.text())
+          applyPresetList(await api('/presets/import', { method: 'POST', body: JSON.stringify({ document }) }))
+          setNotice(t('saved'))
         } catch (err) {
           setError(routeError(err))
         } finally {
@@ -6534,15 +6601,43 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           ),
           panelCard(
             t('sidePresets'),
-            presetData?.error ? t('failed') : t('sidePresetsSum'),
+            presetData?.error
+              ? t('failed')
+              : presetEdit.id === ''
+                ? t('sidePresetsSum')
+                : `${presetEdit.builtin ? t('sidePresetBuiltin') : t('sidePresetCustom')} · ${presetEdit.name}`,
             false,
             presetData?.error
               ? h('p', { className: 'nai-s-hint', style: { color: 'var(--bad)' } }, presetData.error)
-              : presetDraft === null
+              : presetData === null
                 ? h('p', { className: 'nai-s-hint' }, t('loading'))
-                : [
-                    h('div', { key: 'seg' }, seg(presetTab, setPresetTab, [['write', t('sidePresetWrite')], ['dna', t('sidePresetDna')]])),
-                    h('p', { key: 'hint', className: 'nai-s-hint' }, presetTab === 'write' ? t('sidePresetWriteHint') : t('sidePresetDnaHint')),
+                : h(
+                    'div',
+                    { className: 'nai-s-stack' },
+                    seg(presetTab, setPresetTab, [['write', t('sidePresetWrite')], ['dna', t('sidePresetDna')]]),
+                    h('p', { className: 'nai-s-hint' }, presetTab === 'write' ? t('sidePresetWriteHint') : t('sidePresetDnaHint')),
+                    h(
+                      'label',
+                      { className: 'nai-s-field' },
+                      h('span', { className: 'nai-s-label' }, t('sidePresetActive')),
+                      h(
+                        'select',
+                        { className: 'nai-s-in', value: presetEdit.id, onChange: (event) => onPresetSelect(event.target.value) },
+                        (presetData?.kinds?.[presetTab]?.items ?? []).map((item) =>
+                          h('option', { key: item.id, value: item.id }, item.builtin ? `${item.name}（${t('sidePresetBuiltin')}）` : item.name)
+                        )
+                      )
+                    ),
+                    h(
+                      'label',
+                      { className: 'nai-s-field' },
+                      h('span', { className: 'nai-s-label' }, t('sidePresetName')),
+                      h('input', {
+                        className: 'nai-s-in',
+                        value: presetEdit.name,
+                        onChange: (event) => setPresetEdit((prev) => ({ ...prev, name: event.target.value }))
+                      })
+                    ),
                     ['system', 'user'].map((part) =>
                       h(
                         'label',
@@ -6552,25 +6647,35 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                           className: 'nai-s-in nai-s-mono',
                           rows: part === 'system' ? 10 : 6,
                           spellCheck: false,
-                          value: String(presetDraft?.[presetTab]?.[part] ?? ''),
-                          onChange: (event) =>
-                            setPresetDraft((prev) => ({ ...(prev ?? {}), [presetTab]: { ...(prev?.[presetTab] ?? {}), [part]: event.target.value } }))
+                          value: String(presetEdit[part] ?? ''),
+                          onChange: (event) => setPresetEdit((prev) => ({ ...prev, [part]: event.target.value }))
                         })
                       )
                     ),
                     h(
                       'div',
-                      { key: 'acts', className: 'nai-s-row' },
-                      btn(t('save'), onPresetSave, {
-                        kind: 'primary',
+                      { className: 'nai-s-row' },
+                      btn(t('save'), onPresetSave, { kind: 'primary', size: 's', disabled: busy === 'presets' }),
+                      btn(t('sidePresetDuplicate'), onPresetDuplicate, { kind: 'ghost', size: 's', disabled: busy === 'presets', title: t('sidePresetDuplicateHint') }),
+                      btn(t('sidePresetReset'), onPresetReset, { kind: 'ghost', size: 's', disabled: busy === 'presets' }),
+                      btn(t('sidePresetDelete'), onPresetDelete, {
+                        kind: 'ghost',
                         size: 's',
-                        disabled: busy === 'presets' || JSON.stringify(presetDraft) === JSON.stringify(presetData?.presets ?? {})
+                        disabled: busy === 'presets' || presetEdit.builtin || presetEdit.id === ''
                       }),
-                      btn(t('sidePresetDiscard'), () => setPresetDraft(JSON.parse(JSON.stringify(presetData?.presets ?? {}))), { kind: 'ghost', size: 's' }),
                       h('span', { className: 'nai-s-sp' }),
-                      btn(t('sidePresetReset'), () => onPresetReset(presetTab), { kind: 'ghost', size: 's', disabled: busy === 'presets' })
-                    )
-                  ]
+                      btn(t('sidePresetExport'), onPresetExport, { kind: 'ghost', size: 's' }),
+                      btn(t('sidePresetImport'), () => presetFileInput.current?.click(), { kind: 'ghost', size: 's' }),
+                      h('input', {
+                        ref: presetFileInput,
+                        type: 'file',
+                        accept: 'application/json',
+                        hidden: true,
+                        onChange: onPresetImportChosen
+                      })
+                    ),
+                    h('p', { className: 'nai-s-hint' }, t('sidePresetNamedHint'))
+                  )
           ),
           h(
             'details',

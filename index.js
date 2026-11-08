@@ -35,7 +35,20 @@ import { formatDoctor, runDoctor } from './lib/doctor.js'
 import { applyUcPreset, ucPresetText } from './lib/uc-presets.js'
 import { qualityTagText } from './lib/quality-tags.js'
 import { llmModels, llmStatus } from './lib/llm.js'
-import { dnaFromImage, loadPresets, resetPreset, savePresets, writePrompt } from './lib/writer.js'
+import {
+  deletePreset,
+  dnaFromImage,
+  duplicatePreset,
+  exportPresets,
+  importPresets,
+  listPresets,
+  loadPresets,
+  resetPreset,
+  savePreset,
+  savePresets,
+  selectPreset,
+  writePrompt
+} from './lib/writer.js'
 import { editCharacter, mergeEditDraft } from './lib/character-edit.js'
 import { STUDIO_SIZES, estimateView, formatBytes, generateView, listItems, nativePanelView, panelView, probeView, studioView, stripText, toolCard } from './lib/dsh-go.js'
 import { fullIndex, fullRef, thumbRef } from './lib/thumbs.js'
@@ -3193,8 +3206,37 @@ export function apply(ctx) {
       }
 
       // ------------------------------------------------------------ presets --
-      if (method === 'GET' && route === '/presets') return sendJson(res, 200, await loadPresets())
+      // Named presets: one active preset per kind (write / dna), editable copies.
+      if (method === 'GET' && route === '/presets') return sendJson(res, 200, await listPresets())
 
+      if (method === 'GET' && route === '/presets/export') return sendJson(res, 200, await exportPresets())
+
+      if (method === 'POST' && route === '/presets/select') {
+        const body = await readJsonBody(req)
+        return sendJson(res, 200, await selectPreset(String(body.kind ?? ''), String(body.id ?? '')))
+      }
+
+      if (method === 'POST' && route === '/presets/save') {
+        const body = await readJsonBody(req)
+        return sendJson(res, 200, await savePreset(body))
+      }
+
+      if (method === 'POST' && route === '/presets/duplicate') {
+        const body = await readJsonBody(req)
+        return sendJson(res, 200, await duplicatePreset(body))
+      }
+
+      if (method === 'POST' && route === '/presets/delete') {
+        const body = await readJsonBody(req)
+        return sendJson(res, 200, await deletePreset(body))
+      }
+
+      if (method === 'POST' && route === '/presets/import') {
+        const body = await readJsonBody(req)
+        return sendJson(res, 200, await importPresets(body.document ?? body))
+      }
+
+      // Legacy single-preset routes, kept for older panels.
       if (method === 'POST' && route === '/presets') {
         const body = await readJsonBody(req)
         return sendJson(res, 200, await savePresets(body))
@@ -3202,7 +3244,7 @@ export function apply(ctx) {
 
       if (method === 'POST' && route === '/presets/reset') {
         const body = await readJsonBody(req)
-        return sendJson(res, 200, await resetPreset(String(body.name ?? '')))
+        return sendJson(res, 200, await resetPreset(String(body.kind ?? body.name ?? '')))
       }
 
       // ----------------------------------------------------- prompt writer --

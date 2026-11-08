@@ -21,7 +21,17 @@ import { defaults as configDefaults, sourceDirOf } from '../lib/config.js'
 import { characterEditPrompt, mergeEditDraft, normalizeEditDraft, validateEditReply } from '../lib/character-edit.js'
 import { estimateView, formatBytes, generateView, listItems, nativePanelView, panelView, probeView, studioView, stripText, toolCard } from '../lib/dsh-go.js'
 import { apply, applyWriterResult, sourceListing, writerErrorMessage } from '../index.js'
-import { augmentWriterSystem, parseWriterReply, toolCallArguments, toolCallToFlat } from '../lib/writer.js'
+import { DEFAULT_PRESETS, augmentWriterSystem, parseWriterReply, toolCallArguments, toolCallToFlat } from '../lib/writer.js'
+import {
+  deletePreset as deletePresetDoc,
+  duplicatePreset as duplicatePresetDoc,
+  exportPresets as exportPresetsDoc,
+  importPresets as importPresetsDoc,
+  listPresets as listPresetsDoc,
+  resetPresetKind,
+  savePreset as savePresetDoc,
+  selectPreset as selectPresetDoc
+} from '../lib/presets.js'
 import { isWithin, resolveWithin } from '../lib/util.js'
 
 let passed = 0
@@ -720,6 +730,54 @@ await check('the native panel mirrors the sidebar as five tabs inside the budget
   }
 })
 
+await check('named presets: builtin stays active until a custom copy is saved', async () => {
+  // The suite runs with a temporary DSH_HOME (tests/run.mjs), so this writes to
+  // a throwaway presets.json.
+  let list = await listPresetsDoc(DEFAULT_PRESETS)
+  assert.equal(list.kinds.write.activeId, 'builtin-write')
+  assert.equal(list.kinds.write.items[0].builtin, true)
+  assert.ok(list.kinds.write.items[0].system.includes('NovelAI'))
+
+  const saved = await savePresetDoc(
+    { kind: 'write', name: '单测预设', system: 'SYS', user: 'USER' },
+    DEFAULT_PRESETS
+  )
+  list = saved.list
+  assert.equal(list.kinds.write.activeId, saved.item.id)
+  assert.equal(list.kinds.write.items.find((row) => row.id === saved.item.id).system, 'SYS')
+
+  // Selecting the builtin again does not delete the custom copy.
+  list = await selectPresetDoc('write', 'builtin-write', DEFAULT_PRESETS)
+  assert.equal(list.kinds.write.activeId, 'builtin-write')
+  assert.ok(list.kinds.write.items.some((row) => row.id === saved.item.id))
+
+  // Duplicate from the builtin DNA preset, then delete it.
+  const copy = await duplicatePresetDoc({ kind: 'dna', fromId: 'builtin-dna', name: 'DNA 副本' }, DEFAULT_PRESETS)
+  assert.equal(copy.item.builtin, false)
+  assert.equal(copy.list.kinds.dna.activeId, copy.item.id)
+  list = await deletePresetDoc({ kind: 'dna', id: copy.item.id }, DEFAULT_PRESETS)
+  assert.equal(list.kinds.dna.activeId, 'builtin-dna')
+  assert.ok(!list.kinds.dna.items.some((row) => row.id === copy.item.id))
+
+  list = await resetPresetKind('write', DEFAULT_PRESETS)
+  assert.equal(list.kinds.write.activeId, 'builtin-write')
+})
+
+await check('named presets: legacy single-preset documents are migrated', async () => {
+  // The pre-0.8 shape: partial overrides per kind, no version.
+  const list = await importPresetsDoc({ write: { system: '旧自定义' }, dna: {} }, DEFAULT_PRESETS)
+  assert.equal(list.kinds.write.items.some((row) => row.id === 'custom-write-migrated'), true)
+  const active = list.kinds.write.items.find((row) => row.id === list.kinds.write.activeId)
+  assert.equal(active.system, '旧自定义')
+  assert.equal(active.user, DEFAULT_PRESETS.write.user)
+  assert.equal(list.kinds.dna.activeId, 'builtin-dna')
+
+  // Export → import round-trips the document.
+  const exported = await exportPresetsDoc(DEFAULT_PRESETS)
+  const again = await importPresetsDoc(exported, DEFAULT_PRESETS)
+  assert.equal(again.kinds.write.activeId, 'custom-write-migrated')
+})
+
 await check('an empty component list means unknown, not unsupported', () => {
   const view = nativePanelView({ locale: 'zh', components: [] })
   assert.equal(view.v, 2)
@@ -1093,6 +1151,44 @@ await check('GET /render-progress answers unknown ids without failing', async ()
   const response = await call(handler, { url: '/nai-imagegen/api/render-progress?id=nope' })
   assert.equal(response.status, 200)
   assert.equal(JSON.parse(response.body).status, 'unknown')
+})
+
+await check('the named-preset routes list, save, select and delete', async () => {
+  const listed = await call(handler, { url: '/nai-imagegen/api/presets' })
+  assert.equal(listed.status, 200)
+  const first = JSON.parse(listed.body)
+  assert.ok(Array.isArray(first.kinds.write.items))
+  assert.ok(first.kinds.write.items.some((row) => row.id === 'builtin-write'))
+
+  const saved = await call(handler, {
+    method: 'POST',
+    url: '/nai-imagegen/api/presets/save',
+    body: JSON.stringify({ kind: 'write', name: '路由预设', system: 'S', user: 'U' })
+  })
+  assert.equal(saved.status, 200)
+  const savedBody = JSON.parse(saved.body)
+  assert.equal(savedBody.item.name, '路由预设')
+  assert.equal(savedBody.list.kinds.write.activeId, savedBody.item.id)
+
+  const selected = await call(handler, {
+    method: 'POST',
+    url: '/nai-imagegen/api/presets/select',
+    body: JSON.stringify({ kind: 'write', id: 'builtin-write' })
+  })
+  assert.equal(selected.status, 200)
+  assert.equal(JSON.parse(selected.body).kinds.write.activeId, 'builtin-write')
+
+  const deleted = await call(handler, {
+    method: 'POST',
+    url: '/nai-imagegen/api/presets/delete',
+    body: JSON.stringify({ kind: 'write', id: savedBody.item.id })
+  })
+  assert.equal(deleted.status, 200)
+  assert.ok(!JSON.parse(deleted.body).kinds.write.items.some((row) => row.id === savedBody.item.id))
+
+  const exported = await call(handler, { url: '/nai-imagegen/api/presets/export' })
+  assert.equal(exported.status, 200)
+  assert.equal(JSON.parse(exported.body).version, 2)
 })
 
 // --------------------------------------------------------------------- report --
