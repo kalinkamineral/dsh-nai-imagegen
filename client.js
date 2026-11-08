@@ -459,6 +459,8 @@ window.__ModuleLoader__.load({
       sidePresetName: '预设名称',
       sidePresetBuiltin: '内置',
       sidePresetCustom: '自定义',
+      sidePresetNew: '新建预设',
+      sidePresetNewHint: '新建一个空白预设，立刻可以编辑段',
       sidePresetDuplicate: '复制为自定义',
       sidePresetDuplicateHint: '以内置或当前预设为模板，另存为可编辑的自定义预设',
       sidePresetDelete: '删除',
@@ -1006,6 +1008,8 @@ window.__ModuleLoader__.load({
       sidePresetName: 'Preset name',
       sidePresetBuiltin: 'built-in',
       sidePresetCustom: 'custom',
+      sidePresetNew: 'New preset',
+      sidePresetNewHint: 'Create an empty preset with one editable segment',
       sidePresetDuplicate: 'Duplicate as custom',
       sidePresetDuplicateHint: 'Copy the current preset into an editable custom one',
       sidePresetDelete: 'Delete',
@@ -4117,6 +4121,7 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           { kind: presetTab, id: presetEdit.id, name: presetEdit.name, segments: presetEdit.segments },
           t('saved')
         )
+      const onPresetCreate = () => onPresetAction('/presets/create', { kind: presetTab }, t('saved'))
       const onPresetDuplicate = () =>
         onPresetAction('/presets/duplicate', { kind: presetTab, fromId: presetEdit.id, name: `${presetEdit.name} 副本` }, t('saved'))
       const onPresetDelete = () => onPresetAction('/presets/delete', { kind: presetTab, id: presetEdit.id }, t('saved'))
@@ -6773,6 +6778,7 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                       'div',
                       { className: 'nai-s-row' },
                       btn(t('save'), onPresetSave, { kind: 'primary', size: 's', disabled: busy === 'presets' }),
+                      btn(t('sidePresetNew'), onPresetCreate, { kind: 'ghost', size: 's', disabled: busy === 'presets', title: t('sidePresetNewHint') }),
                       btn(t('sidePresetDuplicate'), onPresetDuplicate, { kind: 'ghost', size: 's', disabled: busy === 'presets', title: t('sidePresetDuplicateHint') }),
                       btn(t('sidePresetReset'), onPresetReset, { kind: 'ghost', size: 's', disabled: busy === 'presets' }),
                       btn(t('sidePresetDelete'), onPresetDelete, {

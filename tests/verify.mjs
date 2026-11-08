@@ -23,6 +23,7 @@ import { estimateView, formatBytes, generateView, listItems, nativePanelView, pa
 import { apply, applyWriterResult, sourceListing, writerErrorMessage } from '../index.js'
 import { DEFAULT_PRESETS, augmentWriterSystem, parseWriterReply, toolCallArguments, toolCallToFlat } from '../lib/writer.js'
 import {
+  createPreset as createPresetDoc,
   deletePreset as deletePresetDoc,
   duplicatePreset as duplicatePresetDoc,
   exportPresets as exportPresetsDoc,
@@ -772,6 +773,25 @@ await check('named presets: builtin stays active until a custom copy is saved', 
   assert.equal(list.kinds.write.activeId, 'builtin-write')
 })
 
+await check('named presets: a new empty preset is created and can be edited', async () => {
+  const created = await createPresetDoc({ kind: 'write' }, DEFAULT_PRESETS)
+  assert.equal(created.item.builtin, false)
+  assert.equal(created.item.segments.length, 1)
+  assert.equal(created.item.segments[0].content, '')
+  assert.equal(created.list.kinds.write.activeId, created.item.id)
+
+  const saved = await savePresetDoc(
+    { kind: 'write', id: created.item.id, name: '新建后编辑', segments: [{ name: '唯一段', role: 'user', content: 'HELLO' }] },
+    DEFAULT_PRESETS
+  )
+  const row = saved.list.kinds.write.items.find((item) => item.id === created.item.id)
+  assert.equal(row.name, '新建后编辑')
+  assert.equal(row.segments[0].content, 'HELLO')
+
+  const removed = await deletePresetDoc({ kind: 'write', id: created.item.id }, DEFAULT_PRESETS)
+  assert.equal(removed.kinds.write.activeId, 'builtin-write')
+})
+
 await check('named presets: legacy single-preset documents are migrated', async () => {
   // The pre-0.8 shape: partial overrides per kind, no version.
   const list = await importPresetsDoc({ write: { system: '旧自定义' }, dna: {} }, DEFAULT_PRESETS)
@@ -1204,6 +1224,21 @@ await check('the named-preset routes list, save, select and delete', async () =>
   })
   assert.equal(deleted.status, 200)
   assert.ok(!JSON.parse(deleted.body).kinds.write.items.some((row) => row.id === savedBody.item.id))
+
+  const created = await call(handler, {
+    method: 'POST',
+    url: '/nai-imagegen/api/presets/create',
+    body: JSON.stringify({ kind: 'write' })
+  })
+  assert.equal(created.status, 200)
+  const createdBody = JSON.parse(created.body)
+  assert.equal(createdBody.item.segments.length, 1)
+  assert.equal(createdBody.list.kinds.write.activeId, createdBody.item.id)
+  await call(handler, {
+    method: 'POST',
+    url: '/nai-imagegen/api/presets/delete',
+    body: JSON.stringify({ kind: 'write', id: createdBody.item.id })
+  })
 
   const exported = await call(handler, { url: '/nai-imagegen/api/presets/export' })
   assert.equal(exported.status, 200)

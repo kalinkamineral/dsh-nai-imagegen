@@ -15,7 +15,7 @@ A NovelAI image-generation plugin for **DeepSeek Harness (DSH)**: a sidebar pane
 - **Director tools**: lineart, sketch, colorize, emotion, declutter (no Anlas)
 - **Character library (DNA)**: fixed features, alternate outfits, keywords, reference pictures; "rewrite features with a prompt"
 - **Artist strings**: import an index, search, preview, temporary override
-- **Prompt writer**: turns a sentence or a reference image into a structured NovelAI prompt using the model configured in DSH; presets are named, switchable, duplicable and importable/exportable
+- **Prompt writer**: turns a sentence or a reference image into a structured NovelAI prompt using the model configured in DSH; presets can be created, named, switched, edited segment-by-segment, duplicated and imported/exported
 - **Key pool**: several keys render concurrently; 401/403 disables a key, 429/5xx cools it down and retries elsewhere
 - **DSH Go (Android)**: a native panel mirroring the sidebar (Create / Edit / Gallery / Library / Settings tabs), native gallery thumbnails and viewer, character/artist search, a composer「AI Write」capsule, native tool cards, and a balance strip
 - **Debug log**: writer, render and connectivity calls are recorded (including TTFB and downloaded bytes)
@@ -95,7 +95,7 @@ config.example.json
 ## Development
 
 ```sh
-npm run verify   # 67 offline checks
+npm run verify   # 68 offline checks
 ```
 
 No runtime dependencies; Node.js 22.19+ is enough. Restart DSH after host-code changes; a page refresh is enough for client-only changes.

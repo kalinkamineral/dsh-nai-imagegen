@@ -36,6 +36,7 @@ import { applyUcPreset, ucPresetText } from './lib/uc-presets.js'
 import { qualityTagText } from './lib/quality-tags.js'
 import { llmModels, llmStatus } from './lib/llm.js'
 import {
+  createPreset,
   deletePreset,
   dnaFromImage,
   duplicatePreset,
@@ -3216,6 +3217,11 @@ export function apply(ctx) {
       if (method === 'POST' && route === '/presets/select') {
         const body = await readJsonBody(req)
         return sendJson(res, 200, await selectPreset(String(body.kind ?? ''), String(body.id ?? '')))
+      }
+
+      if (method === 'POST' && route === '/presets/create') {
+        const body = await readJsonBody(req)
+        return sendJson(res, 200, await createPreset(body))
       }
 
       if (method === 'POST' && route === '/presets/save') {
