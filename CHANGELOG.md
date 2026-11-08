@@ -8,6 +8,7 @@
 - **工具契约写进 schema**：`submit_caption` 的 description 与字段说明补全（英文标签、scene/char 分工、≤6 角色、坐标规则），工具模式下模型只靠 schema 也能写对。
 - **预览显示工具**：`POST /presets/preview` 返回 `toolCall` 与当前 `tool` schema，面板预览里可以直接看到本次会发送的工具定义。
 - `nai_write_prompt` 的输出末尾标注实际使用的预设名。
+- **工具模式改用 Argon 原生传输**：把 messages 逐条转成 `turn_<i>_<role>` 数据工具（原文放 description、参数为空），messages 只留一条“按 index 读工具并只调用 submit_caption”的指令，`tool_choice: auto`；预览里可直接看到这套工具列表。
 
 ## 2026-11-09 · 0.9.4
 

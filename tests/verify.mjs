@@ -21,7 +21,7 @@ import { defaults as configDefaults, sourceDirOf } from '../lib/config.js'
 import { characterEditPrompt, mergeEditDraft, normalizeEditDraft, validateEditReply } from '../lib/character-edit.js'
 import { estimateView, formatBytes, generateView, listItems, nativePanelView, panelView, probeView, studioView, stripText, toolCard } from '../lib/dsh-go.js'
 import { apply, applyWriterResult, sourceListing, writerErrorMessage } from '../index.js'
-import { CAPTION_TOOL, DEFAULT_PRESETS, augmentWriterSystem, parseWriterReply, toolCallArguments, toolCallToFlat } from '../lib/writer.js'
+import { CAPTION_TOOL, DEFAULT_PRESETS, augmentWriterSystem, buildArgonTransport, parseWriterReply, toolCallArguments, toolCallToFlat } from '../lib/writer.js'
 import { complete } from '../lib/llm.js'
 import {
   createPreset as createPresetDoc,
@@ -305,6 +305,21 @@ await check('the writer extras append the adult and tool-call rules only when as
   const both = augmentWriterSystem('BASE', { adult: true, toolCall: true })
   assert.match(both, /输出通道/)
   assert.match(both, /submit_caption/)
+})
+
+await check('tool mode packages the conversation as turn_* data tools', () => {
+  const transport = buildArgonTransport('你是 NovelAI 提示词助手', [{ role: 'user', content: '【用户描述】薇尔莉特' }], CAPTION_TOOL)
+  assert.equal(transport.messages.length, 1)
+  assert.match(transport.messages[0].content, /turn_/)
+  assert.equal(transport.tools.length, 3)
+  const [systemTool, userTool, outputTool] = transport.tools
+  assert.equal(systemTool.name, 'turn_0_system')
+  assert.equal(userTool.name, 'turn_1_user')
+  assert.match(systemTool.description, /你是 NovelAI 提示词助手/)
+  assert.match(userTool.description, /薇尔莉特/)
+  assert.deepEqual(systemTool.parameters, { type: 'object', properties: {}, additionalProperties: false })
+  assert.equal(outputTool.name, 'submit_caption')
+  assert.equal(transport.system, undefined)
 })
 
 await check('complete() forwards tools and reads real tool-call chunks', async () => {
@@ -1287,7 +1302,12 @@ await check('the named-preset routes list, save, select and delete', async () =>
   assert.ok(previewBody.system.includes('NovelAI'))
   assert.ok(Array.isArray(previewBody.messages) && previewBody.messages.length >= 1)
   assert.equal(typeof previewBody.toolCall, 'boolean')
-  if (previewBody.toolCall) assert.equal(previewBody.tool?.name, 'submit_caption')
+  if (previewBody.toolCall) {
+    assert.equal(previewBody.tool?.name, 'submit_caption')
+    assert.equal(previewBody.argon?.tools?.length, 3)
+    assert.equal(previewBody.argon?.tools?.[0]?.name, 'turn_0_system')
+    assert.equal(previewBody.argon?.tools?.at(-1)?.name, 'submit_caption')
+  }
 })
 
 // --------------------------------------------------------------------- report --

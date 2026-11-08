@@ -6832,6 +6832,19 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                                 })
                               )
                             : null,
+                          presetPreview.argon
+                            ? h(
+                                'label',
+                                { className: 'nai-s-field' },
+                                h('span', { className: 'nai-s-label' }, 'argon tools'),
+                                h('textarea', {
+                                  className: 'nai-s-in nai-s-mono',
+                                  rows: 12,
+                                  readOnly: true,
+                                  value: JSON.stringify(presetPreview.argon.tools, null, 2)
+                                })
+                              )
+                            : null,
                           (presetPreview.messages ?? []).map((message, index) =>
                             h(
                               'label',

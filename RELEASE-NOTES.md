@@ -6,6 +6,7 @@
 - `submit_caption` 工具的描述与字段说明补全：英文标签、scene/char 分工、≤6 角色、坐标规则，工具模式只靠 schema 也能写对。
 - 预设「预览当前预设」现在同时显示工具 schema（工具模式开启时）。
 - `nai_write_prompt` 输出末尾标注使用的预设名。
+- **工具模式改用 Argon 原生传输**：messages 逐条转成 `turn_<i>_<role>` 数据工具，正文放 description、参数为空；messages 只留一条指令，模型只调用 `submit_caption`，工具列表可在预览里核对。
 
 ### 安装
 

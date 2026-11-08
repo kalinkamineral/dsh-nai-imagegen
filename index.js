@@ -37,6 +37,7 @@ import { qualityTagText } from './lib/quality-tags.js'
 import { llmModels, llmStatus } from './lib/llm.js'
 import {
   CAPTION_TOOL,
+  buildArgonTransport,
   createPreset,
   deletePreset,
   renderTemplate,
@@ -3235,11 +3236,20 @@ export function apply(ctx) {
           .filter((segment) => segment.content.trim() !== '')
         const config = await load()
         const toolCall = config.writerToolCall === true
+        const systemText = rendered
+          .filter((segment) => segment.role === 'system')
+          .map((segment) => segment.content)
+          .join(String.fromCharCode(10, 10))
+        const conversation = rendered
+          .filter((segment) => segment.role !== 'system')
+          .map((segment) => ({ role: segment.role, content: segment.content }))
+        const argon = toolCall ? buildArgonTransport(systemText, conversation, CAPTION_TOOL) : null
         return sendJson(res, 200, {
           kind,
           preset: { id: preset.id, name: preset.name, builtin: preset.builtin === true },
           toolCall,
           tool: toolCall ? CAPTION_TOOL : null,
+          argon,
           system: rendered
             .filter((segment) => segment.role === 'system')
             .map((segment) => segment.content)

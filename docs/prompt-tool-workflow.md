@@ -80,6 +80,30 @@
 
 字段说明本身就是给模型的规则；工具模式下这些规则和预设段里的指令**同时**生效。模型只回工具调用、不回正文也没问题。
 
+## 2.4 Argon 原生传输（工具模式的实际请求形状）
+
+工具模式开启时，请求按 SillyTavern 「Argon 原生传输」的做法重排：
+
+```
+原始 messages: [system, user, assistant, …]
+        │
+        ├─ 每条转成一个零参数工具：turn_<i>_<role>
+        │  description = "index: i
+role: <role>
+
+<原文>"
+        │  parameters  = { type: 'object', properties: {}, additionalProperties: false }
+        │
+        ├─ messages 只剩一条指令：按 index 读 turn_*，只调用一次 submit_caption
+        │
+        └─ tools = [...turn_*, submit_caption]，tool_choice: auto
+```
+
+- `turn_*` 工具**永远不需要被调用**，它们只是携带对话原文的数据容器；
+- 模型只需要调用 `submit_caption`，参数就是最终 caption；
+- 模型如果没调工具、只回文本，插件仍会回退解析文本；
+- 面板「预览当前预设」在工具模式下会同时显示 `turn_*` 工具列表和 `submit_caption` 的 schema。
+
 ## 3. 两种模式怎么选
 
 | 场景 | 建议 |
