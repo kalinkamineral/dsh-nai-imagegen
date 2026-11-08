@@ -2829,6 +2829,8 @@ export function apply(ctx) {
           height: args.height,
           adult: args.adult === undefined ? config.writerAdult === true : args.adult === true,
           toolCall: args.tool_call === undefined ? config.writerToolCall === true : args.tool_call === true,
+          // Tool calls skip segments marked 「工作台专用」.
+          surface: 'tool',
           config,
           signal: exec.signal
         })

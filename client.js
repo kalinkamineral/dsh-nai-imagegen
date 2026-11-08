@@ -465,6 +465,20 @@ window.__ModuleLoader__.load({
       sidePresetExport: '导出',
       sidePresetImport: '导入',
       sidePresetNamedHint: '内置预设随插件更新且只读；修改后点「保存」会自动另存为自定义预设。',
+      sideSegName: '段名',
+      sideSegRole: '角色',
+      sideSegEnabled: '启用',
+      sideSegWorkbench: '工作台专用',
+      sideSegUp: '上移',
+      sideSegDown: '下移',
+      sideSegInsertBefore: '在上方插入',
+      sideSegInsertAfter: '在下方插入',
+      sideSegDelete: '删除段',
+      sideSegAdd: '添加段',
+      sideSegNew: '新段',
+      sideSegRole_system: '系统',
+      sideSegRole_user: '用户',
+      sideSegRole_assistant: '助手',
       sideRefImage: '参考图',
       sideRefPick: '本次参考',
       sideRefPickHint: '写提示词时把这条原文一起交给模型',
@@ -998,6 +1012,20 @@ window.__ModuleLoader__.load({
       sidePresetExport: 'Export',
       sidePresetImport: 'Import',
       sidePresetNamedHint: 'Built-in presets follow plugin updates and are read-only; pressing Save after editing creates a custom copy automatically.',
+      sideSegName: 'Segment name',
+      sideSegRole: 'Role',
+      sideSegEnabled: 'Enabled',
+      sideSegWorkbench: 'Workbench only',
+      sideSegUp: 'Move up',
+      sideSegDown: 'Move down',
+      sideSegInsertBefore: 'Insert above',
+      sideSegInsertAfter: 'Insert below',
+      sideSegDelete: 'Delete segment',
+      sideSegAdd: 'Add segment',
+      sideSegNew: 'New segment',
+      sideSegRole_system: 'System',
+      sideSegRole_user: 'User',
+      sideSegRole_assistant: 'Assistant',
       sideRefImage: 'Reference',
       sideRefPick: 'Use as reference',
       sideRefPickHint: 'Send this entry\'s text to the prompt writer',
@@ -2256,7 +2284,7 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
       const [presetData, setPresetData] = React.useState(null)
       const [presetTab, setPresetTab] = React.useState('write')
       /** The preset being edited: id + editable copy of its text. */
-      const [presetEdit, setPresetEdit] = React.useState({ id: '', name: '', system: '', user: '', builtin: false })
+      const [presetEdit, setPresetEdit] = React.useState({ id: '', name: '', segments: [], builtin: false })
       const presetFileInput = React.useRef(null)
       const [charDoc, setCharDoc] = React.useState(null)
       const [charQuery, setCharQuery] = React.useState('')
@@ -3202,7 +3230,7 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
       React.useEffect(() => {
         const item = presetItemOf(presetData, presetTab)
         if (item === null) return
-        setPresetEdit({ id: item.id, name: item.name, system: item.system, user: item.user, builtin: item.builtin === true })
+        setPresetEdit({ id: item.id, name: item.name, segments: (item.segments ?? []).map((segment) => ({ ...segment })), builtin: item.builtin === true })
       }, [presetData, presetTab])
       React.useEffect(() => {
         if (!side) return
@@ -4038,7 +4066,7 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
       const applyPresetList = (body) => {
         setPresetData(body.list ?? body)
         const item = presetItemOf(body.list ?? body, presetTab)
-        if (item !== null) setPresetEdit({ id: item.id, name: item.name, system: item.system, user: item.user, builtin: item.builtin === true })
+        if (item !== null) setPresetEdit({ id: item.id, name: item.name, segments: (item.segments ?? []).map((segment) => ({ ...segment })), builtin: item.builtin === true })
         return item
       }
       const onPresetAction = async (route, payload, note) => {
@@ -4054,10 +4082,39 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
         }
       }
       const onPresetSelect = (id) => onPresetAction('/presets/select', { kind: presetTab, id })
+      /** Replace the editor's segment list. */
+      const setSegments = (update) =>
+        setPresetEdit((prev) => ({ ...prev, segments: typeof update === 'function' ? update(prev.segments) : update }))
+      const patchSegment = (index, patch) =>
+        setSegments((list) => list.map((segment, at) => (at === index ? { ...segment, ...patch } : segment)))
+      const addSegment = (index) =>
+        setSegments((list) => [
+          ...list.slice(0, index),
+          {
+            id: `seg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+            name: t('sideSegNew'),
+            role: 'user',
+            enabled: true,
+            workbenchOnly: false,
+            content: ''
+          },
+          ...list.slice(index)
+        ])
+      const moveSegment = (index, delta) =>
+        setSegments((list) => {
+          const target = index + delta
+          if (target < 0 || target >= list.length) return list
+          const next = list.slice()
+          const [row] = next.splice(index, 1)
+          next.splice(target, 0, row)
+          return next
+        })
+      const removeSegment = (index) => setSegments((list) => list.filter((_row, at) => at !== index))
+
       const onPresetSave = () =>
         onPresetAction(
           '/presets/save',
-          { kind: presetTab, id: presetEdit.id, name: presetEdit.name, system: presetEdit.system, user: presetEdit.user },
+          { kind: presetTab, id: presetEdit.id, name: presetEdit.name, segments: presetEdit.segments },
           t('saved')
         )
       const onPresetDuplicate = () =>
@@ -6638,20 +6695,80 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                         onChange: (event) => setPresetEdit((prev) => ({ ...prev, name: event.target.value }))
                       })
                     ),
-                    ['system', 'user'].map((part) =>
+                    (presetEdit.segments ?? []).map((segment, index) =>
                       h(
-                        'label',
-                        { key: part, className: 'nai-s-field' },
-                        h('span', { className: 'nai-s-label' }, part === 'system' ? t('sidePresetSystem') : t('sidePresetUser')),
+                        'div',
+                        { key: segment.id ?? index, className: 'nai-s-card', style: { padding: 8 } },
+                        h(
+                          'div',
+                          { className: 'nai-s-row' },
+                          h(
+                            'label',
+                            { className: 'nai-s-field', style: { flex: '1 1 160px' } },
+                            h('span', { className: 'nai-s-label' }, t('sideSegName')),
+                            h('input', {
+                              className: 'nai-s-in',
+                              value: segment.name ?? '',
+                              onChange: (event) => patchSegment(index, { name: event.target.value })
+                            })
+                          ),
+                          h(
+                            'label',
+                            { className: 'nai-s-field', style: { flex: '0 1 110px' } },
+                            h('span', { className: 'nai-s-label' }, t('sideSegRole')),
+                            h(
+                              'select',
+                              {
+                                className: 'nai-s-in',
+                                value: segment.role ?? 'user',
+                                onChange: (event) => patchSegment(index, { role: event.target.value })
+                              },
+                              ['system', 'user', 'assistant'].map((role) =>
+                                h('option', { key: role, value: role }, t(`sideSegRole_${role}`))
+                              )
+                            )
+                          ),
+                          h(
+                            'label',
+                            { className: 'nai-s-check', style: { flex: 'none' } },
+                            h('input', {
+                              type: 'checkbox',
+                              checked: segment.enabled !== false,
+                              onChange: (event) => patchSegment(index, { enabled: event.target.checked })
+                            }),
+                            t('sideSegEnabled')
+                          ),
+                          h(
+                            'label',
+                            { className: 'nai-s-check', style: { flex: 'none' } },
+                            h('input', {
+                              type: 'checkbox',
+                              checked: segment.workbenchOnly === true,
+                              onChange: (event) => patchSegment(index, { workbenchOnly: event.target.checked })
+                            }),
+                            t('sideSegWorkbench')
+                          )
+                        ),
                         h('textarea', {
                           className: 'nai-s-in nai-s-mono',
-                          rows: part === 'system' ? 10 : 6,
+                          rows: 5,
                           spellCheck: false,
-                          value: String(presetEdit[part] ?? ''),
-                          onChange: (event) => setPresetEdit((prev) => ({ ...prev, [part]: event.target.value }))
-                        })
+                          value: segment.content ?? '',
+                          onChange: (event) => patchSegment(index, { content: event.target.value })
+                        }),
+                        h(
+                          'div',
+                          { className: 'nai-s-row', style: { marginTop: 4 } },
+                          btn(t('sideSegUp'), () => moveSegment(index, -1), { kind: 'ghost', size: 's', disabled: index === 0 }),
+                          btn(t('sideSegDown'), () => moveSegment(index, 1), { kind: 'ghost', size: 's', disabled: index === presetEdit.segments.length - 1 }),
+                          btn(t('sideSegInsertBefore'), () => addSegment(index), { kind: 'ghost', size: 's' }),
+                          btn(t('sideSegInsertAfter'), () => addSegment(index + 1), { kind: 'ghost', size: 's' }),
+                          h('span', { className: 'nai-s-sp' }),
+                          btn(t('sideSegDelete'), () => removeSegment(index), { kind: 'ghost', size: 's' })
+                        )
                       )
                     ),
+                    h('div', { className: 'nai-s-row' }, btn(t('sideSegAdd'), () => addSegment(presetEdit.segments.length), { kind: 'ghost', size: 's' })),
                     h(
                       'div',
                       { className: 'nai-s-row' },

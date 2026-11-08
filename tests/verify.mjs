@@ -736,15 +736,24 @@ await check('named presets: builtin stays active until a custom copy is saved', 
   let list = await listPresetsDoc(DEFAULT_PRESETS)
   assert.equal(list.kinds.write.activeId, 'builtin-write')
   assert.equal(list.kinds.write.items[0].builtin, true)
-  assert.ok(list.kinds.write.items[0].system.includes('NovelAI'))
+  assert.ok(list.kinds.write.items[0].segments.length >= 2)
+  assert.ok(list.kinds.write.items[0].segments.some((segment) => segment.role === 'system'))
 
   const saved = await savePresetDoc(
-    { kind: 'write', name: '单测预设', system: 'SYS', user: 'USER' },
+    {
+      kind: 'write',
+      name: '单测预设',
+      segments: [
+        { name: '系统段', role: 'system', content: 'SYS' },
+        { name: '用户段', role: 'user', content: 'USER' }
+      ]
+    },
     DEFAULT_PRESETS
   )
   list = saved.list
   assert.equal(list.kinds.write.activeId, saved.item.id)
-  assert.equal(list.kinds.write.items.find((row) => row.id === saved.item.id).system, 'SYS')
+  const savedRow = list.kinds.write.items.find((row) => row.id === saved.item.id)
+  assert.equal(savedRow.segments.find((segment) => segment.role === 'system').content, 'SYS')
 
   // Selecting the builtin again does not delete the custom copy.
   list = await selectPresetDoc('write', 'builtin-write', DEFAULT_PRESETS)
@@ -768,8 +777,10 @@ await check('named presets: legacy single-preset documents are migrated', async 
   const list = await importPresetsDoc({ write: { system: '旧自定义' }, dna: {} }, DEFAULT_PRESETS)
   assert.equal(list.kinds.write.items.some((row) => row.id === 'custom-write-migrated'), true)
   const active = list.kinds.write.items.find((row) => row.id === list.kinds.write.activeId)
-  assert.equal(active.system, '旧自定义')
-  assert.equal(active.user, DEFAULT_PRESETS.write.user)
+  assert.equal(active.segments.find((segment) => segment.role === 'system').content, '旧自定义')
+  // The migrated preset keeps one system segment; the builtin user turn is not
+  // copied in (an empty user string is skipped during migration).
+  assert.equal(active.segments.some((segment) => segment.role === 'user'), false)
   assert.equal(list.kinds.dna.activeId, 'builtin-dna')
 
   // Export → import round-trips the document.
@@ -1163,11 +1174,19 @@ await check('the named-preset routes list, save, select and delete', async () =>
   const saved = await call(handler, {
     method: 'POST',
     url: '/nai-imagegen/api/presets/save',
-    body: JSON.stringify({ kind: 'write', name: '路由预设', system: 'S', user: 'U' })
+    body: JSON.stringify({
+      kind: 'write',
+      name: '路由预设',
+      segments: [
+        { name: '系统段', role: 'system', content: 'S' },
+        { name: '用户段', role: 'user', content: 'U' }
+      ]
+    })
   })
   assert.equal(saved.status, 200)
   const savedBody = JSON.parse(saved.body)
   assert.equal(savedBody.item.name, '路由预设')
+  assert.equal(savedBody.item.segments.length, 2)
   assert.equal(savedBody.list.kinds.write.activeId, savedBody.item.id)
 
   const selected = await call(handler, {
@@ -1188,7 +1207,7 @@ await check('the named-preset routes list, save, select and delete', async () =>
 
   const exported = await call(handler, { url: '/nai-imagegen/api/presets/export' })
   assert.equal(exported.status, 200)
-  assert.equal(JSON.parse(exported.body).version, 2)
+  assert.equal(JSON.parse(exported.body).version, 3)
 })
 
 // --------------------------------------------------------------------- report --
