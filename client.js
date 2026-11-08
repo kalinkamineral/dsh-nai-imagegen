@@ -470,7 +470,6 @@ window.__ModuleLoader__.load({
       sideSegName: '段名',
       sideSegRole: '角色',
       sideSegEnabled: '启用',
-      sideSegWorkbench: '工作台专用',
       sideSegUp: '上移',
       sideSegDown: '下移',
       sideSegInsertBefore: '在上方插入',
@@ -1019,7 +1018,6 @@ window.__ModuleLoader__.load({
       sideSegName: 'Segment name',
       sideSegRole: 'Role',
       sideSegEnabled: 'Enabled',
-      sideSegWorkbench: 'Workbench only',
       sideSegUp: 'Move up',
       sideSegDown: 'Move down',
       sideSegInsertBefore: 'Insert above',
@@ -4099,7 +4097,6 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
             name: t('sideSegNew'),
             role: 'user',
             enabled: true,
-            workbenchOnly: false,
             content: ''
           },
           ...list.slice(index)
@@ -6743,16 +6740,6 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                             }),
                             t('sideSegEnabled')
                           ),
-                          h(
-                            'label',
-                            { className: 'nai-s-check', style: { flex: 'none' } },
-                            h('input', {
-                              type: 'checkbox',
-                              checked: segment.workbenchOnly === true,
-                              onChange: (event) => patchSegment(index, { workbenchOnly: event.target.checked })
-                            }),
-                            t('sideSegWorkbench')
-                          )
                         ),
                         h('textarea', {
                           className: 'nai-s-in nai-s-mono',
