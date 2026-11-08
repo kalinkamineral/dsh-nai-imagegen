@@ -567,6 +567,8 @@ window.__ModuleLoader__.load({
       sideAdult: '成人向创作范围',
       sideAdultHint: '在写词系统提示里说明：这是成年人之间的虚构插画、角色均为成年人、输出标签而不是叙述。默认关；开启后被拒会自动重试一次。',
       sideToolCall: '工具调用输出',
+      sideToolCallShort: '工具调用',
+      sideAdultShort: '破限',
       sideToolCallHint: '要求写词模型只回一个 JSON 工具调用（submit_caption），插件再摊平成字段。适合更听工具格式的模型。',
       sideWriteModel: '写提示词使用的模型',
       sideWritePlaceholder: '用自然语言描述想要的画面，例如：初音未来坐在雨后的天台上，背后是黄昏的城市。可以粘贴或拖入参考图。',
@@ -1088,6 +1090,8 @@ window.__ModuleLoader__.load({
       sideAdult: 'Adult fictional scope',
       sideAdultHint: 'Adds a scope note to the writer: adult fiction, adult characters, tags instead of prose. Off by default; when on, one refusal retry is allowed.',
       sideToolCall: 'Tool-call output',
+      sideToolCallShort: 'Tool call',
+      sideAdultShort: 'Adult',
       sideToolCallHint: 'Ask the writer to reply through one JSON tool call (submit_caption); the plugin flattens it into fields. Helps models that follow tool schemas better.',
       sideWriteModel: 'Model used for writing',
       sideWritePlaceholder: 'Describe the picture in plain words, e.g. Hatsune Miku sitting on a rooftop after rain, a city at dusk behind her. You can paste or drop a reference image.',
@@ -2207,6 +2211,9 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
       if (wbDraft.current === null) wbDraft.current = side ? readWbDraft() : {}
       const draft0 = wbDraft.current
       const [nlText, setNlText] = React.useState(() => String(draft0.nlText ?? ''))
+      // Per-write switches shown next to 「描述画面」; null means "follow the settings".
+      const [writeToolCall, setWriteToolCall] = React.useState(null)
+      const [writeAdult, setWriteAdult] = React.useState(null)
       const [refImage, setRefImage] = React.useState(null)
       const [pickedRefs, setPickedRefs] = React.useState(() => (Array.isArray(draft0.pickedRefs) ? draft0.pickedRefs : []))
       const [pickedChars, setPickedChars] = React.useState(() => (Array.isArray(draft0.pickedChars) ? draft0.pickedChars : []))
@@ -3517,6 +3524,8 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
             signal: controller.signal,
             body: JSON.stringify({
               naturalLanguage: nlText,
+              toolCall: writeToolCall === null ? status?.writerToolCall === true : writeToolCall,
+              adult: writeAdult === null ? status?.writerAdult === true : writeAdult,
               image: refImage?.dataUrl,
               references: pickedRefs.map(({ library, title, content }) => ({ library, title, content })),
               characterIds: [...new Set([...pickedChars, ...charRows.map((row) => row.charId).filter(Boolean)])],
@@ -5087,6 +5096,30 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                   }, { kind: 'ghost', size: 's' })
                 : null,
               refImage !== null ? btn(t('sideRefToI2i'), refToImg2Img, { kind: 'ghost', size: 's', disabled: busy === 'upload' }) : null,
+              // Per-write switches: the stored settings are the defaults, but a
+              // single write can opt into (or out of) them.
+              h(
+                'label',
+                { className: 'nai-s-check', title: t('sideToolCallHint') },
+                h('input', {
+                  type: 'checkbox',
+                  checked: writeToolCall === null ? status?.writerToolCall === true : writeToolCall,
+                  disabled: writing,
+                  onChange: () => setWriteToolCall(!(writeToolCall === null ? status?.writerToolCall === true : writeToolCall))
+                }),
+                t('sideToolCallShort')
+              ),
+              h(
+                'label',
+                { className: 'nai-s-check', title: t('sideAdultHint') },
+                h('input', {
+                  type: 'checkbox',
+                  checked: writeAdult === null ? status?.writerAdult === true : writeAdult,
+                  disabled: writing,
+                  onChange: () => setWriteAdult(!(writeAdult === null ? status?.writerAdult === true : writeAdult))
+                }),
+                t('sideAdultShort')
+              ),
               h('span', { className: 'nai-s-sp' }),
               writing ? btn(t('sideCancel'), onWriteCancel, { size: 's' }) : null,
               btn(writing ? t('sideWriting') : refImage !== null ? t('sideReverse') : t('sideWrite'), onWrite, {

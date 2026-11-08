@@ -57,7 +57,7 @@ dsh plugin --profile web add /root/.dsh/dsh-go/plugins/dsh-nai-imagegen
 | 请求总时限 | 单次出图的总时限，默认 300000 ms（5 分钟），`0` 关闭 |
 | V5 共享试用 | 是否发送 `use_new_shared_trial`（仅 V5），默认开 |
 | 成人向创作范围 | 写词时附加成年人虚构插画的范围说明（默认关，开启后被拒自动重试一次） |
-| 工具调用输出 | 写词改走 JSON toolcall 再摊平成字段（默认关） |
+| 工具调用输出 | 写词改走 JSON toolcall 再摊平成字段（默认关）；「描述画面」旁也可按次开关 |
 
 也可以让 Agent 用 `nai_config` 修改，或直接编辑 `$DSH_HOME/nai-imagegen/config.json`。
 

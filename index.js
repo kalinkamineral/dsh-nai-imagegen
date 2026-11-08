@@ -1672,6 +1672,8 @@ function studioStateOf(sessionId) {
       job: null,
       writer: null,
       writerDraft: '',
+      /** Per-write switches; null means "follow the stored settings". */
+      writerOpts: { toolCall: null, adult: null },
       edit: { source: '', strength: 0.55, tool: 'img2img', prompt: '' },
       editJob: null,
       lib: { query: '' },
@@ -1891,7 +1893,11 @@ function studioSnapshot(state, config) {
     resultText,
     resultItems,
     estimateText,
-    writer: { text: String(state.writerDraft ?? '') },
+    writer: {
+      text: String(state.writerDraft ?? ''),
+      toolCall: state.writerOpts?.toolCall ?? config.writerToolCall === true,
+      adult: state.writerOpts?.adult ?? config.writerAdult === true
+    },
     writerText,
     writerBusy,
     writerError,
@@ -2794,7 +2800,9 @@ export function apply(ctx) {
           description: 'What the picture should show, in plain words, e.g. "雨后的屋顶，少女坐着看远处的城市".'
         },
         width: { type: 'integer', description: 'Output width, when the caller already knows the size.' },
-        height: { type: 'integer', description: 'Output height, when the caller already knows the size.' }
+        height: { type: 'integer', description: 'Output height, when the caller already knows the size.' },
+        adult: { type: 'boolean', description: 'Add the adult-fiction scope note for this call only (defaults to the writerAdult setting).' },
+        tool_call: { type: 'boolean', description: 'Force the tool-call output channel for this call only (defaults to the writerToolCall setting).' }
       },
       output: { schema: { type: 'string' }, render: textRender((value) => value) },
       async execute(args, exec) {
@@ -2806,8 +2814,8 @@ export function apply(ctx) {
           characterIds: [],
           width: args.width,
           height: args.height,
-          adult: config.writerAdult === true,
-          toolCall: config.writerToolCall === true,
+          adult: args.adult === undefined ? config.writerAdult === true : args.adult === true,
+          toolCall: args.tool_call === undefined ? config.writerToolCall === true : args.tool_call === true,
           config,
           signal: exec.signal
         })
@@ -3215,8 +3223,10 @@ export function apply(ctx) {
           characterIds: Array.isArray(body.characterIds) ? body.characterIds : [],
           width: body.width,
           height: body.height,
-          adult: config.writerAdult === true,
-          toolCall: config.writerToolCall === true,
+          // Per-request switches from the 「描述画面」 bar win over the stored
+          // defaults; omitted fields keep following the settings.
+          adult: body.adult === undefined ? config.writerAdult === true : body.adult === true,
+          toolCall: body.toolCall === undefined ? config.writerToolCall === true : body.toolCall === true,
           config,
           signal: disconnectSignal(res)
         })
@@ -4097,6 +4107,10 @@ export function apply(ctx) {
             state.writerDraft = String(value ?? '')
             return undefined
           }
+          if (bind === 'data.writer.toolCall' || bind === 'data.writer.adult') {
+            state.writerOpts[bind.slice('data.writer.'.length)] = value === true
+            return undefined
+          }
           if (bind.startsWith('data.form.')) {
             if (state.form === null) state.form = {}
             state.form[bind.slice('data.form.'.length)] = value
@@ -4217,8 +4231,8 @@ export function apply(ctx) {
             characterIds: [],
             width: Number.isFinite(width) ? width : undefined,
             height: Number.isFinite(height) ? height : undefined,
-            adult: config.writerAdult === true,
-            toolCall: config.writerToolCall === true,
+            adult: state.writerOpts?.adult ?? config.writerAdult === true,
+            toolCall: state.writerOpts?.toolCall ?? config.writerToolCall === true,
             config,
             signal: controller.signal
           })

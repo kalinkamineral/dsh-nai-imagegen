@@ -564,6 +564,14 @@ await check('the studio view is a valid native form inside the panel budget', as
     assert.ok(writerField, 'the writer textField must be bound to data.writer.text')
     assert.equal(writerField.type, 'textField')
     assert.equal(writerField.onChange, 'changed')
+    // 本次写词的两个开关：默认跟随设置，单独开关只影响这一次。
+    const toolCallField = nodes.find((node) => node.bind === 'data.writer.toolCall')
+    const adultField = nodes.find((node) => node.bind === 'data.writer.adult')
+    assert.ok(toolCallField, 'the per-write tool-call toggle must be bound')
+    assert.ok(adultField, 'the per-write adult toggle must be bound')
+    assert.equal(toolCallField.type, 'toggle')
+    assert.equal(adultField.type, 'toggle')
+    assert.equal(toolCallField.onChange, 'changed')
     const actionItems = nodes.filter((node) => node.type === 'actions').flatMap((node) => node.items ?? [])
     assert.ok(actionItems.some((item) => item.action === 'write'), 'the write action must be wired')
     assert.ok(actionItems.some((item) => item.action === 'cancelWrite'), 'the cancelWrite action must be wired')
@@ -643,6 +651,8 @@ await check('the studio panel is registered and emits its form defaults', async 
   assert.match(first.estimateText, /相对消耗/)
   assert.deepEqual(first.resultItems, [])
   assert.equal(first.writer.text, '')
+  assert.equal(typeof first.writer.toolCall, 'boolean')
+  assert.equal(typeof first.writer.adult, 'boolean')
   assert.equal(typeof first.writerText, 'string')
   assert.equal(first.writerError, '')
 })
@@ -770,11 +780,13 @@ await check('the writer action validates its draft and can be cancelled', async 
   const scope = { sessionId: 'studio-test-writer' }
 
   studio.actions.changed(scope, { value: { bind: 'data.writer.text', value: '雨后的屋顶，少女坐着' } })
+  studio.actions.changed(scope, { value: { bind: 'data.writer.toolCall', value: true } })
   const emitted = []
   const stop = studio.data(scope, (data) => emitted.push(data), { locale: 'zh' })
   await new Promise((resolve) => setTimeout(resolve, 120))
   stop()
   assert.equal(emitted.at(-1).writer.text, '雨后的屋顶，少女坐着')
+  assert.equal(emitted.at(-1).writer.toolCall, true)
 
   const empty = await studio.actions.write({ sessionId: 'studio-test-writer-empty' }, { value: {} })
   assert.match(String(empty.toast ?? ''), /描述/)
