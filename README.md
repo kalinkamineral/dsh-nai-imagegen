@@ -95,7 +95,7 @@ config.example.json
 ## 开发
 
 ```sh
-npm run verify   # 68 项离线检查
+npm run verify   # 69 项离线检查
 ```
 
 无外部运行时依赖，只需要 Node.js 22.19+。改动宿主代码后需重启 DSH；仅前端改动刷新页面即可。

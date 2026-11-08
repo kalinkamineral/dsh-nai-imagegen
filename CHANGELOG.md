@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-08 · 0.9.3
+
+### Fixed
+
+- **工具调用改成真正的函数调用**：之前「工具调用输出」只是在系统提示里要求模型回一段 JSON，属于伪调用；模型不照做时没有任何效果。现在 `complete()` 会把 `tools`（`submit_caption` 的 JSON Schema）传给 DSH 的 llm 流，并解析 `tool-call-delta` / `tool-call` 块，直接把函数参数摊平成 caption 字段。
+- 支持工具调用但返回空文本的回复不再被当成「模型没有返回文字」。
+- 消息组装为 assistant 段补上 `source: { kind: 'model' }`，符合宿主的消息模型。
+- 不支持 `tools` 的模型仍保留提示词 JSON 的回退路径。
+
 ## 2026-11-08 · 0.9.2
 
 ### Changed

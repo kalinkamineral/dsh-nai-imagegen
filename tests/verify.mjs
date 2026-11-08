@@ -21,7 +21,8 @@ import { defaults as configDefaults, sourceDirOf } from '../lib/config.js'
 import { characterEditPrompt, mergeEditDraft, normalizeEditDraft, validateEditReply } from '../lib/character-edit.js'
 import { estimateView, formatBytes, generateView, listItems, nativePanelView, panelView, probeView, studioView, stripText, toolCard } from '../lib/dsh-go.js'
 import { apply, applyWriterResult, sourceListing, writerErrorMessage } from '../index.js'
-import { DEFAULT_PRESETS, augmentWriterSystem, parseWriterReply, toolCallArguments, toolCallToFlat } from '../lib/writer.js'
+import { CAPTION_TOOL, DEFAULT_PRESETS, augmentWriterSystem, parseWriterReply, toolCallArguments, toolCallToFlat } from '../lib/writer.js'
+import { complete } from '../lib/llm.js'
 import {
   createPreset as createPresetDoc,
   deletePreset as deletePresetDoc,
@@ -304,6 +305,36 @@ await check('the writer extras append the adult and tool-call rules only when as
   const both = augmentWriterSystem('BASE', { adult: true, toolCall: true })
   assert.match(both, /输出通道/)
   assert.match(both, /submit_caption/)
+})
+
+await check('complete() forwards tools and reads real tool-call chunks', async () => {
+  const llm = {
+    stream: async function* () {
+      yield { type: 'tool-call-delta', index: 0, id: 'call_1', name: 'submit_caption', argumentsDelta: '{"scene":"1girl, solo",' }
+      yield { type: 'tool-call-delta', index: 0, argumentsDelta: '"scene_uc":"lowres"}' }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }
+  }
+  const ctx = {
+    get(name) {
+      if (name === 'llm') return llm
+      return null
+    }
+  }
+  const reply = await complete(ctx, {
+    config: { llmProvider: 'test-provider', llmModel: 'test-model' },
+    messages: [{ role: 'user', content: '写一张图' }],
+    tools: [CAPTION_TOOL]
+  })
+  assert.equal(reply.text, '')
+  assert.equal(reply.toolCalls.length, 1)
+  assert.equal(reply.toolCalls[0].name, 'submit_caption')
+  assert.deepEqual(JSON.parse(reply.toolCalls[0].arguments), { scene: '1girl, solo', scene_uc: 'lowres' })
+  // The real arguments flatten into the same caption fields the text path uses.
+  const flat = toolCallToFlat(JSON.parse(reply.toolCalls[0].arguments))
+  const parsed = parseWriterReply(flat)
+  assert.equal(parsed.ok, true)
+  assert.equal(parsed.caption.base, '1girl, solo')
 })
 
 await check('a tool-call reply flattens into the caption field grammar', () => {
