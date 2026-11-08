@@ -38,6 +38,7 @@ import { llmModels, llmStatus } from './lib/llm.js'
 import {
   createPreset,
   deletePreset,
+  renderTemplate,
   dnaFromImage,
   duplicatePreset,
   exportPresets,
@@ -3215,6 +3216,32 @@ export function apply(ctx) {
       if (method === 'POST' && route === '/presets/select') {
         const body = await readJsonBody(req)
         return sendJson(res, 200, await selectPreset(String(body.kind ?? ''), String(body.id ?? '')))
+      }
+
+      if (method === 'POST' && route === '/presets/preview') {
+        const body = await readJsonBody(req)
+        const { presets } = await loadPresets()
+        const kind = String(body.kind ?? 'write') === 'dna' ? 'dna' : 'write'
+        const preset = presets[kind]
+        const vars =
+          kind === 'write'
+            ? { 用户描述: '雨后的屋顶，少女坐着看远处的城市', 角色库: '（无）', 参考条目: '（无）', 画面尺寸: '832×1216' }
+            : { 补充说明: '（无）' }
+        const rendered = (preset.segments ?? [])
+          .filter((segment) => segment.enabled !== false)
+          .map((segment) => ({ ...segment, content: renderTemplate(segment.content, vars) }))
+          .filter((segment) => segment.content.trim() !== '')
+        return sendJson(res, 200, {
+          kind,
+          preset: { id: preset.id, name: preset.name, builtin: preset.builtin === true },
+          system: rendered
+            .filter((segment) => segment.role === 'system')
+            .map((segment) => segment.content)
+            .join(String.fromCharCode(10, 10)),
+          messages: rendered
+            .filter((segment) => segment.role !== 'system')
+            .map((segment) => ({ role: segment.role, content: segment.content }))
+        })
       }
 
       if (method === 'POST' && route === '/presets/create') {

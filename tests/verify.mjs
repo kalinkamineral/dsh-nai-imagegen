@@ -1274,6 +1274,18 @@ await check('the named-preset routes list, save, select and delete', async () =>
   const exported = await call(handler, { url: '/nai-imagegen/api/presets/export' })
   assert.equal(exported.status, 200)
   assert.equal(JSON.parse(exported.body).version, 3)
+
+  // Preview renders the active preset with sample variables.
+  const preview = await call(handler, {
+    method: 'POST',
+    url: '/nai-imagegen/api/presets/preview',
+    body: JSON.stringify({ kind: 'write' })
+  })
+  assert.equal(preview.status, 200)
+  const previewBody = JSON.parse(preview.body)
+  assert.equal(previewBody.kind, 'write')
+  assert.ok(previewBody.system.includes('NovelAI'))
+  assert.ok(Array.isArray(previewBody.messages) && previewBody.messages.length >= 1)
 })
 
 // --------------------------------------------------------------------- report --

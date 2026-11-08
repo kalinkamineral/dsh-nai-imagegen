@@ -460,6 +460,8 @@ window.__ModuleLoader__.load({
       sidePresetBuiltin: '内置',
       sidePresetCustom: '自定义',
       sidePresetNew: '新建预设',
+      sidePresetPreview: '预览当前预设',
+      sidePresetPreviewFound: '预览（本次实际会发送的提示词）：',
       sidePresetNewHint: '新建一个空白预设，立刻可以编辑段',
       sidePresetDuplicate: '复制为自定义',
       sidePresetDuplicateHint: '以内置或当前预设为模板，另存为可编辑的自定义预设',
@@ -1008,6 +1010,8 @@ window.__ModuleLoader__.load({
       sidePresetBuiltin: 'built-in',
       sidePresetCustom: 'custom',
       sidePresetNew: 'New preset',
+      sidePresetPreview: 'Preview active preset',
+      sidePresetPreviewFound: 'Preview (what this write will actually send):',
       sidePresetNewHint: 'Create an empty preset with one editable segment',
       sidePresetDuplicate: 'Duplicate as custom',
       sidePresetDuplicateHint: 'Copy the current preset into an editable custom one',
@@ -2287,6 +2291,8 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
       const [presetTab, setPresetTab] = React.useState('write')
       /** The preset being edited: id + editable copy of its text. */
       const [presetEdit, setPresetEdit] = React.useState({ id: '', name: '', segments: [], builtin: false })
+      /** The rendered preview of the active preset (system + messages). */
+      const [presetPreview, setPresetPreview] = React.useState(null)
       const presetFileInput = React.useRef(null)
       const [charDoc, setCharDoc] = React.useState(null)
       const [charQuery, setCharQuery] = React.useState('')
@@ -4119,6 +4125,17 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           t('saved')
         )
       const onPresetCreate = () => onPresetAction('/presets/create', { kind: presetTab }, t('saved'))
+      const onPresetPreview = async () => {
+        setBusy('presets')
+        setError('')
+        try {
+          setPresetPreview(await api('/presets/preview', { method: 'POST', body: JSON.stringify({ kind: presetTab }) }))
+        } catch (err) {
+          setError(routeError(err))
+        } finally {
+          setBusy('')
+        }
+      }
       const onPresetDuplicate = () =>
         onPresetAction('/presets/duplicate', { kind: presetTab, fromId: presetEdit.id, name: `${presetEdit.name} 副本` }, t('saved'))
       const onPresetDelete = () => onPresetAction('/presets/delete', { kind: presetTab, id: presetEdit.id }, t('saved'))
@@ -6774,6 +6791,7 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                         disabled: busy === 'presets' || presetEdit.builtin || presetEdit.id === ''
                       }),
                       h('span', { className: 'nai-s-sp' }),
+                      btn(t('sidePresetPreview'), onPresetPreview, { kind: 'ghost', size: 's', disabled: busy === 'presets' }),
                       btn(t('sidePresetExport'), onPresetExport, { kind: 'ghost', size: 's' }),
                       btn(t('sidePresetImport'), () => presetFileInput.current?.click(), { kind: 'ghost', size: 's' }),
                       h('input', {
@@ -6784,7 +6802,32 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                         onChange: onPresetImportChosen
                       })
                     ),
-                    h('p', { className: 'nai-s-hint' }, t('sidePresetNamedHint'))
+                    h('p', { className: 'nai-s-hint' }, t('sidePresetNamedHint')),
+                    presetPreview === null
+                      ? null
+                      : h(
+                          'div',
+                          { className: 'nai-s-stack' },
+                          h(
+                            'p',
+                            { className: 'nai-s-hint' },
+                            `${t('sidePresetPreviewFound')} ${presetPreview.preset?.name ?? ''}${presetPreview.preset?.builtin ? `（${t('sidePresetBuiltin')}）` : ''}`
+                          ),
+                          h(
+                            'label',
+                            { className: 'nai-s-field' },
+                            h('span', { className: 'nai-s-label' }, 'system'),
+                            h('textarea', { className: 'nai-s-in nai-s-mono', rows: 8, readOnly: true, value: presetPreview.system ?? '' })
+                          ),
+                          (presetPreview.messages ?? []).map((message, index) =>
+                            h(
+                              'label',
+                              { key: index, className: 'nai-s-field' },
+                              h('span', { className: 'nai-s-label' }, String(message.role)),
+                              h('textarea', { className: 'nai-s-in nai-s-mono', rows: 5, readOnly: true, value: String(message.content ?? '') })
+                            )
+                          )
+                        )
                   )
           ),
           h(

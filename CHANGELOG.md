@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-09 · 0.9.4
+
+### Added
+
+- **写词日志记录实际使用的预设**：`write` / `dna` 条目新增 `preset: { kind, id, name, builtin }`，成功摘要也写成「写提示词成功 · 预设「X」…」；写词接口的返回值同样带上 `preset`。
+- **「预览当前预设」按钮**：在预设卡里点一下，会显示本次实际会发送的 system 与 user/assistant 消息（用示例变量渲染）。
+- `presets.json` 被手工编辑后按文件 mtime 自动重载，不需要重启 DSH。
+
 ## 2026-11-08 · 0.9.3
 
 ### Fixed
