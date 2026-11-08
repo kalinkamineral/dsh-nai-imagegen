@@ -680,6 +680,9 @@ async function statusPayload() {
     header: config.header ?? '',
     /** 官方质量词开关（默认关）。面板要能回显它，否则勾选状态看不出来。 */
     qualityToggle: config.qualityToggle === true,
+    /** 写词的两个开关，面板要能回显。 */
+    writerAdult: config.writerAdult === true,
+    writerToolCall: config.writerToolCall === true,
     // The effective proxy, so the panel can show what will actually be used
     // rather than just what was configured.
     proxy: proxyFor(config),
@@ -2643,6 +2646,8 @@ export function apply(ctx) {
           characterIds: [],
           width: args.width,
           height: args.height,
+          adult: config.writerAdult === true,
+          toolCall: config.writerToolCall === true,
           config,
           signal: exec.signal
         })
@@ -2786,7 +2791,18 @@ export function apply(ctx) {
         },
         use_new_shared_trial: {
           type: 'boolean',
-          description: 'Send the V5 shared-trial flag the official client sends (v5 models only). Default true.'
+          description:
+            'Send the V5 shared-trial flag the official client sends (v5 models only). Default true.'
+        },
+        writer_adult: {
+          type: 'boolean',
+          description:
+            'Append an adult fictional-scope note to the prompt writer (characters are adults; output tags, not prose). Off by default. When on, one refusal retry is allowed.'
+        },
+        writer_tool_call: {
+          type: 'boolean',
+          description:
+            'Force the writer to reply through one JSON tool call ({"tool":"submit_caption","arguments":{...}}), which is then flattened into the normal caption fields.'
         },
         output_dir: { type: 'string', description: 'Where PNGs are written.' },
         source_dir: {
@@ -2828,6 +2844,8 @@ export function apply(ctx) {
           decode: 'decode',
           request_timeout_ms: 'requestTimeoutMs',
           use_new_shared_trial: 'useNewSharedTrial',
+          writer_adult: 'writerAdult',
+          writer_tool_call: 'writerToolCall',
           output_dir: 'outputDir',
           source_dir: 'sourceDir',
           library_dir: 'libraryDir',
@@ -2912,6 +2930,8 @@ export function apply(ctx) {
           'decode',
           'requestTimeoutMs',
           'useNewSharedTrial',
+          'writerAdult',
+          'writerToolCall',
           'llmProvider',
           'llmModel',
           'llmMaxTokens',
@@ -3035,6 +3055,8 @@ export function apply(ctx) {
           characterIds: Array.isArray(body.characterIds) ? body.characterIds : [],
           width: body.width,
           height: body.height,
+          adult: config.writerAdult === true,
+          toolCall: config.writerToolCall === true,
           config,
           signal: disconnectSignal(res)
         })
@@ -3980,6 +4002,8 @@ export function apply(ctx) {
             characterIds: [],
             width: Number.isFinite(width) ? width : undefined,
             height: Number.isFinite(height) ? height : undefined,
+            adult: config.writerAdult === true,
+            toolCall: config.writerToolCall === true,
             config,
             signal: controller.signal
           })

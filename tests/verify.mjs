@@ -21,6 +21,7 @@ import { defaults as configDefaults, sourceDirOf } from '../lib/config.js'
 import { characterEditPrompt, mergeEditDraft, normalizeEditDraft, validateEditReply } from '../lib/character-edit.js'
 import { estimateView, formatBytes, generateView, listItems, nativePanelView, panelView, probeView, studioView, stripText, toolCard } from '../lib/dsh-go.js'
 import { apply, applyWriterResult, sourceListing, writerErrorMessage } from '../index.js'
+import { augmentWriterSystem, parseWriterReply, toolCallArguments, toolCallToFlat } from '../lib/writer.js'
 import { isWithin, resolveWithin } from '../lib/util.js'
 
 let passed = 0
@@ -280,6 +281,39 @@ await check('config defaults carry the render deadline and shared-trial flag', (
   const defaults = configDefaults()
   assert.equal(defaults.requestTimeoutMs, 300000)
   assert.equal(defaults.useNewSharedTrial, true)
+  assert.equal(defaults.writerAdult, false)
+  assert.equal(defaults.writerToolCall, false)
+})
+
+await check('the writer extras append the adult and tool-call rules only when asked', () => {
+  assert.equal(augmentWriterSystem('BASE', {}), 'BASE')
+  const adult = augmentWriterSystem('BASE', { adult: true })
+  assert.match(adult, /创作范围/)
+  assert.ok(!adult.includes('输出通道'))
+  const both = augmentWriterSystem('BASE', { adult: true, toolCall: true })
+  assert.match(both, /输出通道/)
+  assert.match(both, /submit_caption/)
+})
+
+await check('a tool-call reply flattens into the caption field grammar', () => {
+  const reply = JSON.stringify({
+    tool: 'submit_caption',
+    arguments: {
+      analysis: '测试',
+      scene: '1girl, solo',
+      scene_uc: 'lowres',
+      char: [{ center: [0.5, 0.5], positive: 'red hair', negative: 'hat' }]
+    }
+  })
+  const args = toolCallArguments(reply)
+  assert.ok(args, 'arguments must be extracted')
+  const flat = toolCallToFlat(args)
+  assert.match(flat, /scene: 1girl, solo/)
+  const parsed = parseWriterReply(flat)
+  assert.equal(parsed.ok, true)
+  assert.equal(parsed.caption.base, '1girl, solo')
+  assert.equal(parsed.caption.characters.length, 1)
+  assert.equal(parsed.caption.characters[0].positive, 'red hair')
 })
 
 await check('httpRequest enforces its overall deadline on a trickling response', async () => {

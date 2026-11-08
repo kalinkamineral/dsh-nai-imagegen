@@ -563,6 +563,11 @@ window.__ModuleLoader__.load({
       sideWriteDone: '提示词已写好，检查后出图',
       sideWriteEmpty: '写一句想要的画面，或者附一张参考图',
       sideWriteHint: '用 DSH 里配置的模型把描述写成下面的结构化提示词，不会自动出图（Ctrl+Enter）',
+      sideWriterCard: '写提示词',
+      sideAdult: '成人向创作范围',
+      sideAdultHint: '在写词系统提示里说明：这是成年人之间的虚构插画、角色均为成年人、输出标签而不是叙述。默认关；开启后被拒会自动重试一次。',
+      sideToolCall: '工具调用输出',
+      sideToolCallHint: '要求写词模型只回一个 JSON 工具调用（submit_caption），插件再摊平成字段。适合更听工具格式的模型。',
       sideWriteModel: '写提示词使用的模型',
       sideWritePlaceholder: '用自然语言描述想要的画面，例如：初音未来坐在雨后的天台上，背后是黄昏的城市。可以粘贴或拖入参考图。',
       sideWriteResult: '写提示词结果',
@@ -1079,6 +1084,11 @@ window.__ModuleLoader__.load({
       sideWriteDone: 'Prompt written; check it, then render',
       sideWriteEmpty: 'Describe the picture, or attach a reference image',
       sideWriteHint: 'Turns the description into the structured prompt below with the model set up in DSH; nothing is rendered (Ctrl+Enter)',
+      sideWriterCard: 'Prompt writer',
+      sideAdult: 'Adult fictional scope',
+      sideAdultHint: 'Adds a scope note to the writer: adult fiction, adult characters, tags instead of prose. Off by default; when on, one refusal retry is allowed.',
+      sideToolCall: 'Tool-call output',
+      sideToolCallHint: 'Ask the writer to reply through one JSON tool call (submit_caption); the plugin flattens it into fields. Helps models that follow tool schemas better.',
       sideWriteModel: 'Model used for writing',
       sideWritePlaceholder: 'Describe the picture in plain words, e.g. Hatsune Miku sitting on a rooftop after rain, a city at dusk behind her. You can paste or drop a reference image.',
       sideWriteResult: 'Writer result',
@@ -2858,6 +2868,23 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
        * The setting is persisted, and the live controller is switched in the same
        * click so the buttons appear/disappear without a reload.
        */
+      /** 写词的两个开关共用一个 POST /config 处理器。 */
+      const onToggleWriterOption = async (field) => {
+        setBusy(`writer:${field}`)
+        setError('')
+        try {
+          const next =
+            field === 'writerAdult' ? status?.writerAdult !== true : status?.writerToolCall !== true
+          await refreshStatus(
+            await api('/config', { method: 'POST', body: JSON.stringify({ [field]: next }) })
+          )
+        } catch (err) {
+          setError(err.message)
+        } finally {
+          setBusy('')
+        }
+      }
+
       const onToggleCodeButtons = async () => {
         setBusy('codeButtons')
         setError('')
@@ -6614,6 +6641,25 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
             switchRow(t('sideCodeBtn'), t('codeButtonsHint'), status?.codeButtons === true, onToggleCodeButtons, busy === 'codeButtons'),
             switchRow(t('sideAuto'), t('autoHint'), status?.autoGenerate === true, onToggleAuto, busy === 'auto'),
             h('p', { className: 'nai-s-hint' }, t('inlineHint'))
+          ),
+          panelCard(
+            t('sideWriterCard'),
+            `${t('sideAdult')} ${onOff(status?.writerAdult === true)} · ${t('sideToolCall')} ${onOff(status?.writerToolCall === true)}`,
+            false,
+            switchRow(
+              t('sideAdult'),
+              t('sideAdultHint'),
+              status?.writerAdult === true,
+              () => onToggleWriterOption('writerAdult'),
+              busy === 'writer:writerAdult'
+            ),
+            switchRow(
+              t('sideToolCall'),
+              t('sideToolCallHint'),
+              status?.writerToolCall === true,
+              () => onToggleWriterOption('writerToolCall'),
+              busy === 'writer:writerToolCall'
+            )
           ),
           hasBooks ? null : indexCard(),
           panelCard(

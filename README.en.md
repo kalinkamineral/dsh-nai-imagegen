@@ -56,6 +56,8 @@ Sidebar → NovelAI → Settings → Connection:
 | Proxy | blank = direct; `auto` = system proxy; or an explicit URL such as `http://127.0.0.1:7890` |
 | Request deadline | overall limit per render, default 300000 ms (5 min), `0` disables |
 | V5 shared trial | send `use_new_shared_trial` (v5 only), default on |
+| Adult scope | add the adult-fiction scope note to the writer (off by default; one refusal retry when on) |
+| Tool-call output | make the writer reply through a JSON toolcall (off by default) |
 
 The agent can change the same settings with `nai_config`, or you can edit `$DSH_HOME/nai-imagegen/config.json` directly.
 

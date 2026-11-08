@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-11-08 · 0.7.0
+
+### 参考来源
+
+- **st-chatu8**：它的「破限」其实是两件事——用大段 system 提示强制模型**只走 toolcall 输出**（含 reasoning/audit 的伪造接管文本），以及在提示里预先声明 NSFW 创作许可。
+- **nai-dbgen**：写词走可编辑的 imagegen preset（worldinfo / 角色 / 构图 / 特征 / 常驻标签分块），拒绝是单独的错误码，不自动重试。
+- **沉浸式Galgame 脚本 JSON**：实为自动更新加载器（从 jsDelivr 拉远端），本身不含破限或工具调用提示，只能参考其「加载器 + 运行时」结构。
+
+### Added
+
+- **写词的「成人向创作范围」开关**（`writerAdult`，默认关）：在写词 system 里说明这是成年人之间的虚构插画、角色均为成年人、输出标签而非叙述；开启后，模型拒绝时自动改用更直接的指令重试一次。
+- **写词的「工具调用输出」开关**（`writerToolCall`，默认关）：要求模型只回一个 `{"tool":"submit_caption","arguments":{…}}`，插件再摊平成原有字段语法（对应 st-chatu8 强制 toolcall 的思路，但不使用伪造系统接管的文本）。
+- 面板设置新增「写提示词」卡片，两个开关可直接切换；`nai_config` 也支持 `writer_adult` / `writer_tool_call`。
+- 新增 `augmentWriterSystem()`、`toolCallArguments()`、`toolCallToFlat()`，以及 3 条离线测试。
+
+### Notes
+
+- 没有采用 st-chatu8 那套「伪造 KERNEL 接管 / 审计通过」的提示词：它依赖欺骗模型对系统提示的信任，且换模型后行为不可预期。成人范围说明是如实声明适用范围，不是绕过安全策略的伪装。
+
 ## 2026-11-08 · 0.6.1
 
 ### Fixed
