@@ -13,8 +13,9 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { deflateSync } from 'node:zlib'
+import { deflateSync, gzipSync } from 'node:zlib'
 import { acceptForDecode, buildPayload, decodeResponse, generateUrlCandidates, insideFreeBand, readBaseImage, sniffImage, MAX_SOURCE_BYTES, MAX_SOURCE_PIXELS } from '../lib/nai.js'
+import { readNaiImage, readStealth } from '../lib/png-meta.js'
 import { httpRequest } from '../lib/net.js'
 import { createServer } from 'node:http'
 import { defaults as configDefaults, sourceDirOf } from '../lib/config.js'
@@ -909,6 +910,25 @@ await check('the nai_write_prompt tool is registered and validates its input', a
   )
 })
 
+await check('the nai_artist_save tool is registered and validates its input', async () => {
+  const tools = await captureTools()
+  const tool = tools.get('nai_artist_save')
+  assert.ok(tool, 'nai_artist_save must be registered')
+  assert.equal(tool.parameters.type, 'object')
+  assert.deepEqual(tool.parameters.required, ['name', 'positive_prompt'])
+  // defineTool validates required arguments before the body runs.
+  await assert.rejects(
+    () => tool.execute({ name: 'x' }, { signal: new AbortController().signal }),
+    /positive_prompt/
+  )
+  // A blank positive prompt is refused by the body, not silently saved.
+  const refused = await tool.execute(
+    { name: 'x', positive_prompt: '   ' },
+    { signal: new AbortController().signal }
+  )
+  assert.match(String(refused), /没有保存|空的/)
+})
+
 await check('the writer action validates its draft and can be cancelled', async () => {
   const panels = await capturePanels()
   const studio = panels.get('novelai')
@@ -1041,6 +1061,14 @@ async function call(handler, { method = 'GET', url, body = null }) {
 
 const handler = await captureHandler()
 
+await check('GET /artists/version answers with a revision stamp', async () => {
+  const response = await call(handler, { url: '/nai-imagegen/api/artists/version' })
+  assert.equal(response.status, 200)
+  const body = JSON.parse(response.body)
+  assert.equal(typeof body.rev, 'string')
+  assert.ok(body.rev.includes(':'))
+})
+
 await check('GET /status is routed and exposes the source directory', async () => {
   const response = await call(handler, { url: '/nai-imagegen/api/status' })
   assert.equal(response.status, 200)
@@ -1097,6 +1125,42 @@ await check('POST /generate forwards a base image name into the img2img path', a
   })
   assert.equal(response.status, 400)
   assert.match(JSON.parse(response.body).error, /底图不存在/)
+})
+
+await check('POST /generate accepts the panel vibe list and rejects a missing reference by name', async () => {
+  // A missing reference fails inside readBaseImage before any network call, so
+  // this proves the route carried `vibes` into renderNow without spending quota
+  // — the same shape the panel sends after uploading the picture.
+  const named = await call(handler, {
+    method: 'POST',
+    url: '/nai-imagegen/api/generate',
+    body: JSON.stringify({
+      prompt: 'x',
+      width: 832,
+      height: 1216,
+      vibes: [{ file: '__no_such_vibe__.png', strength: 0.5, info: 0.6 }]
+    })
+  })
+  assert.equal(named.status, 400)
+  assert.match(JSON.parse(named.body).error, /底图不存在|不存在/)
+
+  // A bare name list is accepted too; it must still be read as a reference
+  // rather than silently dropped.
+  const bare = await call(handler, {
+    method: 'POST',
+    url: '/nai-imagegen/api/generate',
+    body: JSON.stringify({ prompt: 'x', width: 832, height: 1216, vibes: ['__no_such_vibe__.png'] })
+  })
+  assert.equal(bare.status, 400)
+
+  // An empty or malformed list leaves the request as a plain text-to-image one,
+  // so it fails later (no credentials in tests) rather than on the vibes.
+  const empty = await call(handler, {
+    method: 'POST',
+    url: '/nai-imagegen/api/generate',
+    body: JSON.stringify({ prompt: 'x', width: 832, height: 1216, vibes: [] })
+  })
+  assert.notEqual(empty.status, 400)
 })
 
 await check('POST /source-upload rejects a non-image body without writing a file', async () => {
@@ -1308,6 +1372,248 @@ await check('the named-preset routes list, save, select and delete', async () =>
     assert.equal(previewBody.argon?.tools?.[0]?.name, 'turn_0_system')
     assert.equal(previewBody.argon?.tools?.at(-1)?.name, 'submit_caption')
   }
+})
+
+// --------------------------------------------------------------------- report --
+// ------------------------------------------------------- NovelAI PNG records --
+/** A NovelAI-style Comment, shaped like an official V5 record. */
+const NAI_COMMENT = {
+  prompt: 'artist:foo, 2girls, beach',
+  steps: 28,
+  height: 1216,
+  width: 832,
+  scale: 6,
+  cfg_rescale: 0.6,
+  seed: 120058854,
+  n_samples: 1,
+  noise_schedule: 'karras',
+  sampler: 'k_euler_ancestral',
+  skip_cfg_above_sigma: null,
+  dynamic_thresholding: false,
+  prefer_brownian: true,
+  deliberate_euler_ancestral_bug: false,
+  straight_alpha: true,
+  v4_prompt: {
+    caption: {
+      base_caption: 'artist:foo, 2girls, beach',
+      char_captions: [
+        { char_caption: '1girl, red hair', centers: [{ x: 0.3, y: 0.5 }] },
+        { char_caption: '1girl, blue hair', centers: [{ x: 0.7, y: 0.5 }] }
+      ]
+    },
+    use_coords: true,
+    use_order: true,
+    legacy_uc: false
+  },
+  v4_negative_prompt: {
+    caption: {
+      base_caption: 'lowres, bad anatomy',
+      char_captions: [
+        { char_caption: 'hat', centers: [{ x: 0.3, y: 0.5 }] },
+        { char_caption: '', centers: [{ x: 0.7, y: 0.5 }] }
+      ]
+    },
+    use_coords: false,
+    use_order: false,
+    legacy_uc: false
+  },
+  uc: 'lowres, bad anatomy',
+  request_type: 'PromptGenerateRequest'
+}
+
+/** A small RGBA PNG; `alpha(x, y)` gives each pixel's alpha byte. */
+function makeRgbaPng(width, height, alpha, chunks = []) {
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(width, 0)
+  ihdr.writeUInt32BE(height, 4)
+  ihdr[8] = 8
+  ihdr[9] = 6
+  const rows = []
+  for (let y = 0; y < height; y += 1) {
+    const row = Buffer.alloc(1 + width * 4)
+    for (let x = 0; x < width; x += 1) row[1 + x * 4 + 3] = alpha(x, y)
+    rows.push(row)
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', ihdr),
+    ...chunks,
+    pngChunk('IDAT', deflateSync(Buffer.concat(rows))),
+    pngChunk('IEND', Buffer.alloc(0))
+  ])
+}
+
+function textChunkOf(key, value) {
+  return pngChunk('tEXt', Buffer.concat([Buffer.from(key, 'latin1'), Buffer.from([0]), Buffer.from(value, 'utf8')]))
+}
+
+/** Hide `text` in the alpha LSBs the way NovelAI does (column-major, gzip). */
+function makeStealthPng(width, height, text) {
+  const payload = gzipSync(Buffer.from(text, 'utf8'))
+  const bits = []
+  const pushByte = (byte) => {
+    for (let b = 7; b >= 0; b -= 1) bits.push((byte >> b) & 1)
+  }
+  for (const byte of Buffer.from('stealth_pngcomp', 'latin1')) pushByte(byte)
+  const lengthBits = payload.length * 8
+  for (let b = 31; b >= 0; b -= 1) bits.push(Math.floor(lengthBits / 2 ** b) & 1)
+  for (const byte of payload) pushByte(byte)
+  if (bits.length > width * height) throw new Error('fixture too small for the payload')
+  return makeRgbaPng(width, height, (x, y) => {
+    const index = x * height + y
+    return 254 | (index < bits.length ? bits[index] : 1)
+  })
+}
+
+await check('readNaiImage reads an official-style record from the text chunks', () => {
+  const png = makeRgbaPng(4, 4, () => 255, [
+    textChunkOf('Software', 'NovelAI'),
+    textChunkOf('Source', 'NovelAI Diffusion V5 0ADF9AB7'),
+    textChunkOf('Comment', JSON.stringify(NAI_COMMENT))
+  ])
+  const meta = readNaiImage(png)
+  assert.equal(meta.ok, true)
+  assert.equal(meta.origin, 'text')
+  assert.equal(meta.model, 'nai-diffusion-5-full')
+  assert.equal(meta.params.seed, 120058854)
+  assert.equal(meta.params.cfgRescale, 0.6)
+  assert.equal(meta.params.preferBrownian, true)
+  assert.equal(meta.params.deliberateEulerAncestralBug, false)
+  assert.equal(meta.caption.base, 'artist:foo, 2girls, beach')
+  assert.equal(meta.caption.characters.length, 2)
+  assert.deepEqual(meta.caption.characters[0].center, { x: 0.3, y: 0.5 })
+  assert.equal(meta.caption.characters[0].negative, 'hat')
+  assert.equal(meta.caption.baseNegative, 'lowres, bad anatomy')
+})
+
+await check('readNaiImage falls back to the alpha-channel copy when text chunks are stripped', () => {
+  const record = JSON.stringify({ Source: 'NovelAI Diffusion V4.5 4BDE2A90', Comment: JSON.stringify(NAI_COMMENT) })
+  const png = makeStealthPng(64, 64, record)
+  assert.ok(readStealth(png).includes('NovelAI Diffusion V4.5'))
+  const meta = readNaiImage(png)
+  assert.equal(meta.ok, true)
+  assert.equal(meta.origin, 'stealth')
+  assert.equal(meta.model, 'nai-diffusion-4-5-full')
+  assert.equal(meta.params.seed, 120058854)
+})
+
+await check('readNaiImage explains a picture without a record instead of guessing', () => {
+  assert.equal(readNaiImage(makePng(4, 4)).ok, false)
+  assert.match(readNaiImage(Buffer.from('not a png')).reason, /不是 PNG/)
+})
+
+await check('氛围转移: vibe tensors become three parallel reference arrays', () => {
+  // No references: the three arrays stay empty, exactly as before.
+  const plain = buildPayload({ ...base, model: 'nai-diffusion-4-5-full' })
+  assert.deepEqual(plain.parameters.reference_image_multiple, [])
+  assert.deepEqual(plain.parameters.reference_information_extracted_multiple, [])
+  assert.deepEqual(plain.parameters.reference_strength_multiple, [])
+
+  // One reference: the blob rides in reference_image_multiple and the two
+  // weight arrays carry its own info/strength, index for index.
+  const oneref = buildPayload({
+    ...base,
+    model: 'nai-diffusion-4-5-full',
+    vibes: [{ base64: 'VIBE==', info: 0.55, strength: 0.45 }]
+  })
+  assert.deepEqual(oneref.parameters.reference_image_multiple, ['VIBE=='])
+  assert.deepEqual(oneref.parameters.reference_information_extracted_multiple, [0.55])
+  assert.deepEqual(oneref.parameters.reference_strength_multiple, [0.45])
+
+  // Several references keep their order and their per-reference weights.
+  const two = buildPayload({
+    ...base,
+    model: 'nai-diffusion-4-5-full',
+    vibes: [
+      { base64: 'A', info: 0.5, strength: 0.3 },
+      { base64: 'B', info: 0.7, strength: 0.9 }
+    ]
+  })
+  assert.deepEqual(two.parameters.reference_image_multiple, ['A', 'B'])
+  assert.deepEqual(two.parameters.reference_strength_multiple, [0.3, 0.9])
+
+  // Missing weights fall back to the documented defaults rather than NaN.
+  const loose = buildPayload({ ...base, model: 'nai-diffusion-4-5-full', vibes: [{ base64: 'C' }] })
+  assert.deepEqual(loose.parameters.reference_information_extracted_multiple, [0.7])
+  assert.deepEqual(loose.parameters.reference_strength_multiple, [0.6])
+
+  // Weights outside 0..1 are clamped, not passed through.
+  const wild = buildPayload({
+    ...base,
+    model: 'nai-diffusion-4-5-full',
+    vibes: [{ base64: 'D', info: 5, strength: -2 }]
+  })
+  assert.deepEqual(wild.parameters.reference_information_extracted_multiple, [1])
+  assert.deepEqual(wild.parameters.reference_strength_multiple, [0])
+
+  // V3 predates the structured caption, so it has no reference arrays; asking
+  // for a vibe there is an error instead of a silently ignored argument.
+  assert.throws(() => buildPayload({ ...base, model: 'nai-diffusion-3', vibes: [{ base64: 'E' }] }), /氛围转移/)
+})
+
+await check('V4+ payload carries the official sampler flags and negative-caption switches', () => {
+  const body = buildPayload({ ...base, model: 'nai-diffusion-5-full' })
+  assert.equal(body.parameters.prefer_brownian, true)
+  assert.equal(body.parameters.deliberate_euler_ancestral_bug, false)
+  assert.equal(body.parameters.straight_alpha, true)
+  assert.equal(body.parameters.v4_prompt.use_order, true)
+  assert.equal(body.parameters.v4_negative_prompt.use_coords, false)
+  assert.equal(body.parameters.v4_negative_prompt.use_order, false)
+  assert.equal(body.parameters.v4_negative_prompt.legacy_uc, false)
+  // V3 does not know these flags.
+  const v3 = buildPayload({ ...base, model: 'nai-diffusion-3' })
+  assert.equal(v3.parameters.prefer_brownian, undefined)
+  assert.equal(v3.parameters.straight_alpha, undefined)
+})
+
+await check('split payload sends the scene alone as input, prompt and base caption', () => {
+  const body = buildPayload({
+    ...base,
+    prompt: 'beach, 1girl, red hair',
+    negativePrompt: 'lowres, hat',
+    sceneCaption: 'beach',
+    sceneNegative: 'lowres',
+    characters: [{ positive: '1girl, red hair', negative: 'hat', centers: [{ x: 0.3, y: 0.5 }] }]
+  })
+  assert.equal(body.input, 'beach')
+  assert.equal(body.parameters.prompt, 'beach')
+  assert.equal(body.parameters.v4_prompt.caption.base_caption, 'beach')
+  assert.equal(body.parameters.negative_prompt, 'lowres')
+  assert.equal(body.parameters.v4_negative_prompt.caption.char_captions[0].char_caption, 'hat')
+})
+
+await check('a recorded image replays with its own switches', () => {
+  const png = makeRgbaPng(4, 4, () => 255, [textChunkOf('Source', 'NovelAI Diffusion V5 0ADF9AB7'), textChunkOf('Comment', JSON.stringify({ ...NAI_COMMENT, skip_cfg_above_sigma: 58, prefer_brownian: false, deliberate_euler_ancestral_bug: true }))])
+  const { replay } = readNaiImage(png)
+  const body = buildPayload({
+    ...base,
+    model: 'nai-diffusion-5-full',
+    prompt: replay.prompt,
+    negativePrompt: replay.negativePrompt,
+    sceneCaption: replay.prompt,
+    sceneNegative: replay.negativePrompt,
+    characters: replay.characters.map((row) => ({ positive: row.positive, negative: row.negative, centers: [row.center] })),
+    exact: replay
+  })
+  assert.equal(body.parameters.cfg_rescale, 0.6)
+  assert.equal(body.parameters.skip_cfg_above_sigma, 58)
+  assert.equal(body.parameters.prefer_brownian, false)
+  assert.equal(body.parameters.deliberate_euler_ancestral_bug, true)
+  assert.equal(body.parameters.v4_prompt.use_coords, true)
+  assert.deepEqual(body.parameters.v4_prompt.caption.char_captions[1].centers, [{ x: 0.7, y: 0.5 }])
+})
+
+await check('POST /png-meta reads an uploaded PNG and rejects one without a record', async () => {
+  const png = makeRgbaPng(4, 4, () => 255, [textChunkOf('Source', 'NovelAI Diffusion V5 0ADF9AB7'), textChunkOf('Comment', JSON.stringify(NAI_COMMENT))])
+  const good = await call(handler, { method: 'POST', url: '/nai-imagegen/api/png-meta?name=a.png', body: png })
+  assert.equal(good.status, 200)
+  const body = JSON.parse(good.body)
+  assert.equal(body.ok, true)
+  assert.equal(body.params.seed, 120058854)
+  assert.equal(body.caption.characters.length, 2)
+  const bad = await call(handler, { method: 'POST', url: '/nai-imagegen/api/png-meta?name=b.png', body: makePng(4, 4) })
+  assert.equal(bad.status, 422)
+  assert.ok(JSON.parse(bad.body).error)
 })
 
 // --------------------------------------------------------------------- report --

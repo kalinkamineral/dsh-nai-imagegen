@@ -108,6 +108,15 @@ window.__ModuleLoader__.load({
       artistNonePicked: '已关闭画师串',
       artistPicked: '已切换画师串',
       artistMissing: '记住的画师串在当前索引里找不到了（索引可能被重建过）。请重新选一条。',
+      sideArtistNew: '新建画师串',
+      sideArtistNewHint: '在这里直接新建一条画师串，不用先导入文件。也可以直接在聊天里说「把这条画师串存进去」。',
+      sideArtistNewNamePh: '给这条画师串起个名字',
+      sideArtistNewPromptPh: '正向提示词：画师 tag、风格词，用逗号或换行分隔',
+      sideArtistNewSave: '保存并选用',
+      sideArtistNewSaveOnly: '只保存',
+      sideArtistNewSaving: '保存中…',
+      sideArtNameNeeded: '请先给画师串起个名字',
+      sideArtPromptNeeded: '正向提示词不能为空',
       keys: 'API Key 池',
       concurrency: '并发度',
       keyLabel: '标签',
@@ -212,6 +221,18 @@ window.__ModuleLoader__.load({
       sideFree: 'Opus 免费区间',
       sideNotFree: '超出免费区间',
       sideNotFreeVariants: '多张会消耗 Anlas',
+      /* 氛围转移 (Vibe Transfer) */
+      vibeTitle: '氛围转移',
+      vibeHint: '参考图只把色调、光线和材质感带过来，不复制图里的内容。加一张图和自己的提示词配在一起，等于「这张图的氛围 + 我要的画面」。',
+      vibeAdd: '添加参考图',
+      vibeEmpty: '还没有参考图。点「添加参考图」，或把图拖进来、粘贴进来。',
+      vibeStrength: '强度',
+      vibeStrengthHint: '越大越像参考图。0.3 只借一点配色，0.6 氛围明显，0.9 会盖过提示词、把构图也拖过来。',
+      vibeInfo: '信息提取',
+      vibeInfoHint: '编码时保留参考图多少「身份」。0.5–0.6 只取氛围、主体交给提示词；调高会把原图构图一起带过来。',
+      vibeLimit: '最多 3 张',
+      vibeEncoding: '正在编码参考图…',
+      vibeNote: '氛围转移不额外消耗 Anlas，只有出图计费。',
       sideExtras: '提示词附加',
       sideNoHeader: '无头部插入',
       sideSampling: '画幅与采样',
@@ -486,6 +507,16 @@ window.__ModuleLoader__.load({
       sideRefPick: '本次参考',
       sideRefPickHint: '写提示词时把这条原文一起交给模型',
       sideRefToI2i: '拿这张做图生图',
+      sidePngRead: '读图参数',
+      sidePngReadRef: '读这张的参数',
+      sidePngReadHint: '从 NovelAI 原图（官网或本插件出的 PNG）读出提示词、种子和全部采样参数，填进工作台。拖进来的参考图是 PNG 时，也可以直接点「读这张的参数」。',
+      sidePngLoaded: '已读入图片参数',
+      sidePngReplay: '按原图复现',
+      sidePngReplayHint: '用图里记录的全部参数原样再出一张：不加画师串、UC 预设和质量词（原图提示词里已经包含）。种子留空则用原图种子。',
+      sidePngReplaySeed: '换种子复现',
+      sidePngClear: '退出复现模式',
+      sidePngReplayDone: '已按原图参数复现',
+      sidePngNotes: '注意',
       sideRefUnpick: '取消参考',
       sideRemove: '移除',
       sideReplaceKw: '替换角色关键字',
@@ -658,6 +689,15 @@ window.__ModuleLoader__.load({
       artistNonePicked: 'Artist string cleared',
       artistPicked: 'Artist string set',
       artistMissing: 'The remembered artist string is not in the current index (it may have been rebuilt). Pick one again.',
+      sideArtistNew: 'New artist string',
+      sideArtistNewHint: 'Create one right here — no file to import. You can also just say in the chat "save this as an artist string".',
+      sideArtistNewNamePh: 'Name this artist string',
+      sideArtistNewPromptPh: 'Positive prompt: artist tags and style words, comma or newline separated',
+      sideArtistNewSave: 'Save and use',
+      sideArtistNewSaveOnly: 'Save only',
+      sideArtistNewSaving: 'Saving…',
+      sideArtNameNeeded: 'Give the artist string a name first',
+      sideArtPromptNeeded: 'The positive prompt cannot be empty',
       keys: 'API key pool',
       concurrency: 'Concurrency',
       keyLabel: 'Label',
@@ -761,6 +801,18 @@ window.__ModuleLoader__.load({
       sideNoTokenPill: 'No credential · open settings',
       sideFree: 'Opus free band',
       sideNotFree: 'Outside the free band',
+      /* 氛围转移 (Vibe Transfer) */
+      vibeTitle: 'Vibe transfer',
+      vibeHint: 'The reference lends colour, lighting and material feel without copying its subject. Pair one picture with your prompt: that picture\u2019s mood, your scene.',
+      vibeAdd: 'Add reference',
+      vibeEmpty: 'No reference yet. Add one, or drop and paste an image here.',
+      vibeStrength: 'Strength',
+      vibeStrengthHint: 'Higher borrows more. 0.3 is a whisper of colour, 0.6 a clear mood match, 0.9 floods the frame and starts overriding the prompt.',
+      vibeInfo: 'Information',
+      vibeInfoHint: 'How much of the reference\u2019s own identity the encoder keeps. 0.5-0.6 keeps the mood and leaves the subject to the prompt; higher drags the composition along.',
+      vibeLimit: 'Up to 3',
+      vibeEncoding: 'Encoding reference…',
+      vibeNote: 'Vibe transfer costs no Anlas; only the render is billed.',
       sideNotFreeVariants: 'Several images cost Anlas',
       sideExtras: 'Prompt extras',
       sideNoHeader: 'no header',
@@ -1036,6 +1088,16 @@ window.__ModuleLoader__.load({
       sideRefPick: 'Use as reference',
       sideRefPickHint: 'Send this entry\'s text to the prompt writer',
       sideRefToI2i: 'Use for img2img',
+      sidePngRead: 'Read PNG',
+      sidePngReadRef: 'Read this PNG',
+      sidePngReadHint: 'Read the prompt, seed and every sampling setting from a NovelAI PNG (official site or this plugin) into the workbench.',
+      sidePngLoaded: 'Image parameters loaded',
+      sidePngReplay: 'Replay exactly',
+      sidePngReplayHint: 'Render again with every recorded setting, adding no artist string, UC preset or quality tags (the recorded prompt already has them). Empty seed uses the recorded one.',
+      sidePngReplaySeed: 'Replay, new seed',
+      sidePngClear: 'Leave replay',
+      sidePngReplayDone: 'Replayed with the recorded parameters',
+      sidePngNotes: 'Note',
       sideRefUnpick: 'Stop using',
       sideRemove: 'Remove',
       sideReplaceKw: 'Replace character keywords',
@@ -1907,6 +1969,17 @@ button.nai-s-pill:focus-visible{outline:none;box-shadow:var(--focus)}
 .nai-s-write{border:1px solid var(--line);border-radius:var(--r-md);background:var(--paper);overflow:hidden;transition:border-color .12s}
 .nai-s-write:focus-within{border-color:var(--ink3);box-shadow:0 0 0 3px var(--hover)}
 .nai-s-write[data-drop="1"]{border-color:var(--ink);border-style:dashed}
+/* 氛围转移 strip: one quiet line while empty, a card once a reference is in. */
+.nai-s-vibe{display:flex;flex-direction:column;gap:6px;margin:0 0 8px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--paper);transition:border-color .12s}
+.nai-s-vibe[data-drop="1"]{border-color:var(--ink);border-style:dashed}
+.nai-s-vibe[data-on="1"]{background:var(--wash)}
+.nai-s-vibe-head{display:flex;align-items:center;gap:8px}
+.nai-s-vibe-title{font-size:12px;font-weight:600;color:var(--ink2);letter-spacing:.02em}
+.nai-s-vibe-list{display:flex;flex-wrap:wrap;gap:6px}
+.nai-s-vibe-list>.nai-s-tok>img{width:22px;height:22px}
+.nai-s-vibe-knobs{display:flex;flex-wrap:wrap;gap:10px 16px}
+.nai-s-vibe-knob{display:flex;flex:1 1 140px;flex-direction:column;gap:3px;min-width:0;font-size:11.5px;color:var(--ink3)}
+.nai-s-vibe-knob>input[type=range]{width:100%;height:16px;margin:0;accent-color:var(--ink2)}
 .nai-s-write-head{display:flex;align-items:center;gap:8px;padding:8px 12px 0;font-size:12px;color:var(--ink3)}
 .nai-s-write textarea{display:block;width:100%;min-height:64px;padding:6px 12px 8px;border:0;outline:none;resize:vertical;background:none;color:var(--ink);font:inherit;font-size:13px;line-height:1.55}
 .nai-s-attach{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px}
@@ -2269,6 +2342,25 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
       const [writeToolCall, setWriteToolCall] = React.useState(null)
       const [writeAdult, setWriteAdult] = React.useState(null)
       const [refImage, setRefImage] = React.useState(null)
+      /**
+       * 氛围转移 references: `[{ key, dataUrl, name, uploaded }]`. The bytes stay
+       * in the page until render time; the Host needs a file name inside the
+       * source directory, so each one is uploaded lazily on first use.
+       */
+      const [vibes, setVibes] = React.useState([])
+      const [vibeStrength, setVibeStrength] = React.useState(0.6)
+      const [vibeInfo, setVibeInfo] = React.useState(0.6)
+      /**
+       * Uploaded names, mirrored out of state. `sideExtras()` runs synchronously
+       * right after `uploadVibes()` resolves, and reading React state there would
+       * still see the pre-upload value — the render would silently go out with
+       * no reference at all.
+       */
+      const uploadedVibes = React.useRef([])
+      const vibeFileInput = React.useRef(null)
+      /** A NovelAI record read from a PNG (`/png-meta`), for 「按原图复现」. */
+      const [pngMeta, setPngMeta] = React.useState(null)
+      const pngFileInput = React.useRef(null)
       const [pickedRefs, setPickedRefs] = React.useState(() => (Array.isArray(draft0.pickedRefs) ? draft0.pickedRefs : []))
       const [pickedChars, setPickedChars] = React.useState(() => (Array.isArray(draft0.pickedChars) ? draft0.pickedChars : []))
       const [baseNeg, setBaseNeg] = React.useState(() => String(draft0.baseNeg ?? ''))
@@ -2285,6 +2377,8 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
       const writeAbort = React.useRef(null)
       const refFileInput = React.useRef(null)
       const [writeDrop, setWriteDrop] = React.useState(false)
+      /** Highlight state for the vibe strip only; the write box has its own. */
+      const [vibeDrop, setVibeDrop] = React.useState(false)
       const [llmInfo, setLlmInfo] = React.useState(null)
       const [llmModelList, setLlmModelList] = React.useState(null)
       const [presetData, setPresetData] = React.useState(null)
@@ -2315,6 +2409,8 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
         draft0.artistText && typeof draft0.artistText === 'object' ? draft0.artistText : null
       )
       const [artEditOpen, setArtEditOpen] = React.useState(false)
+      // 新建画师串：一条空白草稿，不依赖「先选一条再另存」，直接在任何时候填。
+      const [newArtistDraft, setNewArtistDraft] = React.useState(null)
       const [confirmKey, setConfirmKey] = React.useState('')
       // ---- batch 3 ----
       const renderAbort = React.useRef(null)
@@ -2474,6 +2570,10 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
         const requestId = `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
         const stopProgress = watchRenderProgress(requestId)
         try {
+          // 氛围转移: the Host needs a file name in the source directory, so any
+          // reference not yet uploaded goes out first. One short upload, and the
+          // encode itself happens on the Host and is free.
+          if (vibes.length > 0) await uploadVibes()
           const body = await api('/generate', {
             method: 'POST',
             signal: controller.signal,
@@ -2519,6 +2619,7 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
         const requestId = `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
         const stopProgress = watchRenderProgress(requestId)
         try {
+          if (vibes.length > 0) await uploadVibes()
           // Clamped here as well as on the Host: the notice reports the value
           // that was actually sent, so 1.2 typed into the field must not be
           // echoed as 1.2 when the request carried 0.99.
@@ -3158,6 +3259,50 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
         setStylePickerOpen(false)
       }, [sideNav])
 
+      // 聊天窗口里用 nai_artist_save 存了画师串（或另开了一个面板标签），这里轮询
+      // 一个便宜的版本号，变了就把列表和当前详情重新拉一遍——不用刷新整个页面。
+      const artistQueryRef = React.useRef('')
+      const artistGroupRef = React.useRef('')
+      React.useEffect(() => {
+        artistQueryRef.current = artistQuery
+      }, [artistQuery])
+      React.useEffect(() => {
+        artistGroupRef.current = artistGroup
+      }, [artistGroup])
+      React.useEffect(() => {
+        if (!side) return undefined
+        let alive = true
+        let last = null
+        const tick = async () => {
+          try {
+            const body = await api('/artists/version')
+            if (!alive) return
+            const rev = String(body?.rev ?? '')
+            if (last !== null && rev !== last) {
+              loadArtists(artistQueryRef.current, artistGroupRef.current)
+              refreshStatus().catch(() => {})
+              if (activeStyleId >= 0) {
+                try {
+                  const entry = await api(`/artist?id=${activeStyleId}`)
+                  if (alive) setStyleDetail(entry)
+                } catch {
+                  /* 选中的那条可能被删掉了，交给 status 轮询处理 */
+                }
+              }
+            }
+            last = rev
+          } catch {
+            /* 宿主端还没有这个路由（旧版本），忽略即可 */
+          }
+        }
+        tick()
+        const timer = setInterval(tick, 4000)
+        return () => {
+          alive = false
+          clearInterval(timer)
+        }
+      }, [side, activeStyleId, loadArtists, refreshStatus])
+
       /** Send a finished render to the edit tab as the inpaint / director base. */
       const editRender = (name) => {
         chooseInpaintImage(name)
@@ -3547,8 +3692,21 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
         if (override !== undefined) out.artistOverride = override
         const seed = Number(seedText)
         if (seedText.trim() !== '' && Number.isInteger(seed) && seed > 0) out.seed = seed
+        // 氛围转移: names already inside the source directory (uploadVibes ran
+        // before the request). A reference list is only sent when non-empty, so
+        // an untouched panel produces byte-identical requests to before.
+        const names = vibeNames()
+        if (names.length > 0) {
+          out.vibes = names.map((file) => ({ file, strength: vibeStrength, info: vibeInfo }))
+        }
         return out
       }
+      /**
+       * The uploaded vibe file names. Read from the mirror that `uploadVibes`
+       * fills, so the value seen here is the one just uploaded rather than the
+       * stale pre-upload state.
+       */
+      const vibeNames = () => (uploadedVibes.current ?? []).filter((name) => name !== '' && name !== undefined)
       /** Remember the seed of the newest render, for 「沿用上次种子」. */
       const noteSeed = (body) => {
         const seed = (body?.files ?? []).map((file) => file.seed).find((value) => Number.isFinite(Number(value)) && Number(value) > 0)
@@ -3656,6 +3814,60 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           setError(err.message)
         }
       }
+      // ---------------------------------------------------------- 氛围转移 --
+      /** Take one vibe reference from a picked/dropped/pasted file. */
+      const takeVibe = async (file) => {
+        if (vibes.length >= 3) {
+          setError(t('vibeLimit'))
+          return
+        }
+        try {
+          const read = await readImageFile(file)
+          setVibes((list) =>
+            list.length >= 3
+              ? list
+              : [...list, { key: `v${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, ...read, uploaded: '' }]
+          )
+        } catch (err) {
+          setError(err.message)
+        }
+      }
+      const dropVibe = (key) => setVibes((list) => list.filter((row) => row.key !== key))
+      /**
+       * The vibe references as the Host wants them: names inside the source
+       * directory.
+       *
+       * The panel holds data URLs because it needs the preview; the Host reads
+       * files, not bytes, so each reference is uploaded once through the same
+       * `source-upload` route the img2img tab uses and its name is returned.
+       * That keeps the sandbox boundary intact — nothing outside the source
+       * directory can ever be read.
+       */
+      const uploadVibes = async () => {
+        const out = []
+        const next = []
+        for (const row of vibes) {
+          if (row.uploaded !== '') {
+            out.push(row.uploaded)
+            next.push(row)
+            continue
+          }
+          const bytes = await (await fetch(row.dataUrl)).arrayBuffer()
+          const response = await fetch(`${API}/source-upload?name=${encodeURIComponent(row.name)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: bytes
+          })
+          const body = JSON.parse((await response.text()) || '{}')
+          if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`)
+          const name = body.name ?? row.name
+          out.push(name)
+          next.push({ ...row, uploaded: name })
+        }
+        setVibes(next)
+        uploadedVibes.current = out
+        return out
+      }
       const takeDnaImage = async (file) => {
         try {
           setDnaImage(await readImageFile(file))
@@ -3665,6 +3877,97 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
       }
       /** First image in a paste or drop, if any. */
       const imageFromTransfer = (transfer) => [...(transfer?.files ?? [])].find((file) => /^image\//.test(file.type)) ?? null
+
+      /**
+       * 读图参数: send the PNG bytes to the Host, which reads the NovelAI record
+       * (text chunks, or the alpha-channel copy) and answers with a workbench
+       * caption plus the exact parameters. The editor is filled from it; the
+       * record is kept for 「按原图复现」.
+       */
+      const readPngInto = async (file) => {
+        if (!file) return
+        setBusy('png-read')
+        setError('')
+        setNotice('')
+        try {
+          const response = await fetch(`${API}/png-meta?name=${encodeURIComponent(file.name || 'image.png')}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: await file.arrayBuffer()
+          })
+          const body = JSON.parse((await response.text()) || '{}')
+          if (!response.ok || body.ok !== true) throw new Error(body.error || body.reason || `HTTP ${response.status}`)
+          applyCaption(body.caption)
+          if (Number(body.params?.seed) > 0) setSeedText(String(body.params.seed))
+          setPngMeta({ ...body, name: file.name || 'image.png' })
+          setNotice(t('sidePngLoaded'))
+        } catch (err) {
+          setError(err.message)
+        } finally {
+          setBusy('')
+        }
+      }
+
+      /**
+       * 按原图复现: render with the record exactly. The caption as it stands in
+       * the editor replaces the recorded one, so a read-in image can be tweaked
+       * (a tag changed, a character moved) and still keep every recorded switch.
+       */
+      const onReplay = async (newSeed) => {
+        if (pngMeta === null) return
+        setBusy('render')
+        const controller = new AbortController()
+        renderAbort.current = controller
+        setError('')
+        setNotice('')
+        const requestId = `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+        const stopProgress = watchRenderProgress(requestId)
+        try {
+          const caption = sideCaption()
+          const exact = {
+            ...pngMeta.replay,
+            prompt: caption === null ? prompt : String(caption.base ?? ''),
+            negativePrompt: caption === null ? baseNeg : String(caption.baseNegative ?? ''),
+            characters:
+              caption === null
+                ? []
+                : (caption.characters ?? []).map((row) => ({
+                    positive: String(row.positive ?? ''),
+                    negative: String(row.negative ?? ''),
+                    center: row.center && typeof row.center === 'object' ? row.center : null
+                  }))
+          }
+          const seed = Number(seedText)
+          const pinned = newSeed
+            ? Math.floor(Math.random() * 4294967294) + 1
+            : seedText.trim() !== '' && Number.isInteger(seed) && seed > 0
+              ? seed
+              : null
+          const body = await api('/generate', {
+            method: 'POST',
+            signal: controller.signal,
+            body: JSON.stringify({
+              prompt: exact.prompt || ' ',
+              exact,
+              replayFrom: pngMeta.name,
+              nSamples: Number(variants) || 1,
+              requestId,
+              ...(pinned === null ? {} : { seed: pinned })
+            })
+          })
+          noteSeed(body)
+          if (side) loadBalance()
+          setNotice(`${t('sidePngReplayDone')} · ${body.files.length} 张 · seed ${body.files.map((row) => row.seed).join(', ')}`)
+          await refresh()
+        } catch (err) {
+          if (err?.name === 'AbortError') setNotice(t('sideRenderCancelled'))
+          else failWith(err)
+        } finally {
+          stopProgress()
+          renderAbort.current = null
+          setBusy('')
+        }
+      }
 
       /** Send the reference image to the img2img tab as its base. */
       const refToImg2Img = async () => {
@@ -3994,8 +4297,49 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           setBusy('')
         }
       }
-      const onArtistCover = async (name) => {
-        if (!(activeStyleId >= 0)) throw new Error(t('sideArtNone'))
+      /** 打开「新建画师串」：给一张空草稿，保存后自动选中它。 */
+      const openNewArtist = () => {
+        setNewArtistDraft({ name: '', positivePrompt: '', negativePrompt: '' })
+        setStylePickerOpen(false)
+        setStyleDetail(null)
+      }
+      /** 保存这张新建草稿；`useNow` 为真时顺手把它设为当前画师串。 */
+      const onNewArtistSave = async (useNow) => {
+        if (newArtistDraft === null) return
+        const name = String(newArtistDraft.name ?? '').trim()
+        if (name === '') {
+          setError(t('sideArtNameNeeded'))
+          return
+        }
+        if (String(newArtistDraft.positivePrompt ?? '').trim() === '') {
+          setError(t('sideArtPromptNeeded'))
+          return
+        }
+        setBusy('artist-new')
+        setError('')
+        try {
+          const body = await api('/artists/user/save', {
+            method: 'POST',
+            body: JSON.stringify({
+              name,
+              positivePrompt: newArtistDraft.positivePrompt,
+              negativePrompt: newArtistDraft.negativePrompt
+            })
+          })
+          setNewArtistDraft(null)
+          await loadArtists(artistQuery, artistGroup)
+          if (Number.isFinite(Number(body.id)) && useNow) {
+            await onPickArtist(Number(body.id))
+            await refreshStyle(Number(body.id))
+          }
+          setNotice(t('sideArtCreated'))
+        } catch (err) {
+          setError(routeError(err))
+        } finally {
+          setBusy('')
+        }
+      }
+      const onArtistCover = async (name) => {        if (!(activeStyleId >= 0)) throw new Error(t('sideArtNone'))
         await api('/artists/user/cover', { method: 'POST', body: JSON.stringify({ id: activeStyleId, from: name }) })
         await refreshStyle(activeStyleId)
         setNotice(t('sideArtCoverDone'))
@@ -4057,13 +4401,20 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           onEdit: (file) => editRender(file),
           onCover: activeStyleId >= 0 ? onArtistCover : null,
           onDelete: (file) => deleteRenders([file]),
-          onLoad: (meta) => {
+          onLoad: (meta, shown) => {
             const request = meta?.request ?? {}
+            const current = shown ?? name
             if (request.caption && typeof request.caption === 'object') applyCaption(request.caption)
             else applyCaption({ base: String(request.userPrompt ?? request.prompt ?? ''), baseNegative: '', characters: [] })
             if (typeof request.replaceCharacterKeywords === 'boolean') setReplaceKw(request.replaceCharacterKeywords)
-            const seed = (meta?.files ?? []).find((row) => row.name === name)?.seed ?? meta?.files?.[0]?.seed
+            const seed = (meta?.files ?? []).find((row) => row.name === current)?.seed ?? meta?.files?.[0]?.seed
             if (Number(seed) > 0) setLastSeed(Number(seed))
+            // Keep the image's own record too, so 「按原图复现」 is one click away.
+            api(`/png-meta?name=${encodeURIComponent(current)}`)
+              .then((body) => {
+                if (body?.ok === true) setPngMeta({ ...body, name: current })
+              })
+              .catch(() => {})
             setSideNav('create')
             setNotice(t('sideViewerLoaded'))
           }
@@ -5201,6 +5552,30 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
               'div',
               { className: 'nai-s-write-bar' },
               btn(t('sideAttachImage'), () => refFileInput.current?.click(), { kind: 'ghost', size: 's', title: t('sideAttachHint') }),
+              btn(busy === 'png-read' ? t('testing') : t('sidePngRead'), () => pngFileInput.current?.click(), {
+                kind: 'ghost',
+                size: 's',
+                title: t('sidePngReadHint'),
+                disabled: busy === 'png-read'
+              }),
+              h('input', {
+                ref: pngFileInput,
+                type: 'file',
+                accept: 'image/png',
+                hidden: true,
+                onChange: (event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file) readPngInto(file)
+                }
+              }),
+              refImage !== null && /\.png$/i.test(refImage.name)
+                ? btn(t('sidePngReadRef'), async () => readPngInto(new File([await (await fetch(refImage.dataUrl)).blob()], refImage.name, { type: 'image/png' })), {
+                    kind: 'ghost',
+                    size: 's',
+                    title: t('sidePngReadHint')
+                  })
+                : null,
               h('input', {
                 ref: refFileInput,
                 type: 'file',
@@ -5417,6 +5792,148 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           h(
             'div',
             { className: 'nai-s-composer' },
+            pngMeta !== null
+              ? h(
+                  'div',
+                  { className: 'nai-s-composer-bar', style: { borderTop: 0, flexWrap: 'wrap', gap: 6 } },
+                  h(
+                    'span',
+                    { className: 'nai-s-receipt nai-s-mono', title: pngMeta.source ?? '', style: { flexBasis: '100%' } },
+                    [
+                      pngMeta.name,
+                      pngMeta.model,
+                      `${pngMeta.params?.width}×${pngMeta.params?.height}`,
+                      `seed ${pngMeta.params?.seed}`,
+                      pngMeta.params?.sampler,
+                      `${pngMeta.params?.steps} steps`,
+                      `cfg ${pngMeta.params?.scale}`,
+                      `rescale ${pngMeta.params?.cfgRescale}`,
+                      pngMeta.params?.skipCfgAboveSigma !== null ? 'variety' : null
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                  ),
+                  (pngMeta.notes ?? []).length > 0
+                    ? h('span', { className: 'nai-s-hint', style: { flexBasis: '100%', color: 'var(--warn)' } }, `${t('sidePngNotes')}：${pngMeta.notes.join('；')}`)
+                    : null,
+                  h('span', { className: 'nai-s-sp' }),
+                  btn(t('sidePngClear'), () => setPngMeta(null), { kind: 'ghost', size: 's' }),
+                  btn(t('sidePngReplaySeed'), () => onReplay(true), { size: 's', disabled: busy === 'render' }),
+                  btn(busy === 'render' ? t('testing') : t('sidePngReplay'), () => onReplay(false), {
+                    kind: 'primary',
+                    size: 's',
+                    title: t('sidePngReplayHint'),
+                    disabled: busy === 'render' || !seedValid
+                  })
+                )
+              : null,
+            // ------------------------------------------------- 氛围转移 --
+            // Sits directly above the composer so the reference is visible next
+            // to the prompt it modifies, and collapses to one line while empty
+            // so the panel stays quiet for plain text-to-image work.
+            h(
+              'div',
+              {
+                className: 'nai-s-vibe',
+                'data-on': vibes.length > 0 ? '1' : '0',
+                'data-drop': vibeDrop ? '1' : undefined,
+                onDragOver: (event) => {
+                  if ([...(event.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')) {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setVibeDrop(true)
+                  }
+                },
+                onDragLeave: () => setVibeDrop(false),
+                onDrop: (event) => {
+                  setVibeDrop(false)
+                  const file = imageFromTransfer(event.dataTransfer)
+                  if (file) {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    takeVibe(file)
+                  }
+                },
+                onPaste: (event) => {
+                  const file = imageFromTransfer(event.clipboardData)
+                  if (file) {
+                    event.preventDefault()
+                    takeVibe(file)
+                  }
+                }
+              },
+              h(
+                'div',
+                { className: 'nai-s-vibe-head' },
+                h('span', { className: 'nai-s-vibe-title' }, t('vibeTitle')),
+                h('span', { className: 'nai-s-sp' }),
+                vibes.length > 0 ? h('span', { className: 'nai-s-hint' }, `${vibes.length}/3`) : null,
+                btn(t('vibeAdd'), () => vibeFileInput.current?.click(), {
+                  kind: 'ghost',
+                  size: 's',
+                  title: t('vibeHint'),
+                  disabled: vibes.length >= 3
+                })
+              ),
+              vibes.length === 0
+                ? h('span', { className: 'nai-s-hint' }, t('vibeEmpty'))
+                : h(
+                    'div',
+                    { className: 'nai-s-vibe-list' },
+                    vibes.map((row) =>
+                      h(
+                        'span',
+                        { key: row.key, className: 'nai-s-tok', title: row.name },
+                        h('img', { src: row.dataUrl, alt: '' }),
+                        h('button', { type: 'button', 'aria-label': t('sideRemove'), onClick: () => dropVibe(row.key) }, '×')
+                      )
+                    )
+                  ),
+              vibes.length > 0
+                ? h(
+                    'div',
+                    { className: 'nai-s-vibe-knobs' },
+                    h(
+                      'label',
+                      { className: 'nai-s-vibe-knob', title: t('vibeStrengthHint') },
+                      h('span', null, `${t('vibeStrength')} ${vibeStrength.toFixed(2)}`),
+                      h('input', {
+                        type: 'range',
+                        min: 0,
+                        max: 1,
+                        step: 0.05,
+                        value: vibeStrength,
+                        onChange: (event) => setVibeStrength(Number(event.target.value))
+                      })
+                    ),
+                    h(
+                      'label',
+                      { className: 'nai-s-vibe-knob', title: t('vibeInfoHint') },
+                      h('span', null, `${t('vibeInfo')} ${vibeInfo.toFixed(2)}`),
+                      h('input', {
+                        type: 'range',
+                        min: 0,
+                        max: 1,
+                        step: 0.05,
+                        value: vibeInfo,
+                        onChange: (event) => setVibeInfo(Number(event.target.value))
+                      })
+                    )
+                  )
+                : null,
+              vibes.length > 0 ? h('span', { className: 'nai-s-hint' }, t('vibeNote')) : null,
+              h('input', {
+                ref: vibeFileInput,
+                type: 'file',
+                accept: 'image/png,image/jpeg,image/webp',
+                style: { display: 'none' },
+                onChange: (event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file) takeVibe(file)
+                }
+              })
+            ),
             h(
               'div',
               { className: 'nai-s-composer-bar', style: { borderTop: 0, flexWrap: 'wrap' } },
@@ -5873,8 +6390,69 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                 value: artistQuery,
                 onChange: (event) => onArtistQuery(event.target.value)
               }),
-              btn(t('refresh'), () => loadArtists(artistQuery, artistGroup), { kind: 'ghost', size: 's' })
+              btn(t('refresh'), () => loadArtists(artistQuery, artistGroup), { kind: 'ghost', size: 's' }),
+              btn(t('sideArtistNew'), () => (newArtistDraft === null ? openNewArtist() : setNewArtistDraft(null)), {
+                kind: newArtistDraft === null ? 'primary' : 'ghost',
+                size: 's',
+                pressed: newArtistDraft !== null ? 'true' : 'false',
+                title: t('sideArtistNewHint')
+              })
             ),
+            newArtistDraft !== null
+              ? h(
+                  'div',
+                  { className: 'nai-s-artedit', style: { marginTop: 6 } },
+                  h('p', { className: 'nai-s-hint' }, t('sideArtistNewHint')),
+                  h(
+                    'label',
+                    { className: 'nai-s-field' },
+                    h('span', { className: 'nai-s-label' }, t('sideArtName')),
+                    h('input', {
+                      className: 'nai-s-in',
+                      placeholder: t('sideArtistNewNamePh'),
+                      value: newArtistDraft.name,
+                      onChange: (event) => setNewArtistDraft({ ...newArtistDraft, name: event.target.value })
+                    })
+                  ),
+                  h(
+                    'label',
+                    { className: 'nai-s-field' },
+                    h('span', { className: 'nai-s-label' }, t('sideArtPositive')),
+                    h('textarea', {
+                      className: 'nai-s-in nai-s-mono',
+                      rows: 4,
+                      spellCheck: false,
+                      placeholder: t('sideArtistNewPromptPh'),
+                      value: newArtistDraft.positivePrompt,
+                      onChange: (event) => setNewArtistDraft({ ...newArtistDraft, positivePrompt: event.target.value })
+                    })
+                  ),
+                  h(
+                    'label',
+                    { className: 'nai-s-field' },
+                    h('span', { className: 'nai-s-label' }, t('sideArtNegative')),
+                    h('textarea', {
+                      className: 'nai-s-in nai-s-mono',
+                      rows: 3,
+                      spellCheck: false,
+                      value: newArtistDraft.negativePrompt,
+                      onChange: (event) => setNewArtistDraft({ ...newArtistDraft, negativePrompt: event.target.value })
+                    })
+                  ),
+                  h(
+                    'div',
+                    { className: 'nai-s-row' },
+                    btn(busy === 'artist-new' ? t('sideArtistNewSaving') : t('sideArtistNewSave'), () => onNewArtistSave(true), {
+                      kind: 'primary',
+                      size: 's',
+                      disabled: busy === 'artist-new'
+                    }),
+                    btn(t('sideArtistNewSaveOnly'), () => onNewArtistSave(false), { size: 's', disabled: busy === 'artist-new' }),
+                    h('span', { className: 'nai-s-sp' }),
+                    btn(t('sideArtDiscard'), () => setNewArtistDraft(null), { kind: 'ghost', size: 's', disabled: busy === 'artist-new' })
+                  )
+                )
+              : null,
             groupChips(),
             h('div', { className: 'nai-s-hint' }, `${t('artistCount')} ${artistTotal} · ${t('artistCurrent')}：${styleOn ? styleName : t('artistNone')}`),
             artistTotal === 0

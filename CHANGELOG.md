@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-16 · 0.9.6
+
+### Added
+
+- **聊天窗口直接存画师串**：新增工具 `nai_artist_save`。在对话里说「把这条画师串存进去」并给出名称和正向/负向提示词，模型就能直接写入「我的画师串」，不用再手动导入文件；传 `id` 可覆盖已有条目，`apply: true` 会顺手设为当前画师串。
+- **面板「新建画师串」**：侧栏「画师串」页加了「新建画师串」按钮和就地编辑器（名称、正向、负向），可「只保存」或「保存并选用」，不再只能靠「先选一条再另存」。
+- **保存后免刷新可见**：新增 `GET /artists/version`（只读两个文件的 mtime/size），面板每 4 秒比对一次，聊天里或另一个标签页存的画师串会自动出现在列表里。
+- **`nai_read_png`：按原图参数复现**。读 PNG 里记录的模型、种子、采样、引导、CFG rescale、场景与角色 caption、负向，并可原样重出一张（`replay`）——不叠加画师串 / UC 预设 / 质量词，它们已经在记录里。
+- **对齐官方 V5/V4.5 请求体**：补齐采样器噪声开关（`prefer_brownian` / `deliberate_euler_ancestral_bug`）、`use_coords` 下每段 caption 的坐标点、与 base caption 同步的 `input`/`prompt`、`straight_alpha` 和扁平负向等字段。
+- **氛围转移（Vibe Transfer）**：结构化 caption（V4+）下把原本的空占位数组换成真实参考图张量；V3 模型直接拒绝，不让服务器报错。
+- 新增 `lib/png-meta.js`：从 PNG 文本块或隐藏的 alpha 通道副本读取生成记录，`GET/POST /png-meta` 与 `nai_read_png` 共用。
+
 ## 2026-11-09 · 0.9.5
 
 ### Added

@@ -19,11 +19,12 @@
  * Deliberately dependency-free apart from the two DSH services it injects.
  */
 import { readdir, readFile, rm, stat, mkdir, writeFile } from 'node:fs/promises'
-import { join, basename, extname } from 'node:path'
+import { join, basename, extname, isAbsolute } from 'node:path'
 import { LIBRARIES, MODE_FIELDS, MODE_NAMES, load, outputDirOf, save, sourceDirOf, tokenOf } from './lib/config.js'
-import { DIRECTOR_TYPES, FREE_AREA, MAX_SOURCE_BYTES, MAX_SOURCE_PIXELS, acceptForDecode, augmentImage, costWeight, formatBalance, generate, insideFreeBand, legalAxis, noiseScheduleFor, persist, probe, proxyFor, readBaseImage, sniffImage, systemProxy, systemProxyInfo } from './lib/nai.js'
+import { DIRECTOR_TYPES, FREE_AREA, MAX_SOURCE_BYTES, MAX_SOURCE_PIXELS, acceptForDecode, augmentImage, costWeight, encodeVibe, formatBalance, generate, insideFreeBand, legalAxis, noiseScheduleFor, persist, probe, proxyFor, readBaseImage, sniffImage, systemProxy, systemProxyInfo } from './lib/nai.js'
 import { listLibraries, lookup, rebuildIndex, resolveCharacter } from './lib/library.js'
 import { digest, safeJoin } from './lib/util.js'
+import { readNaiImage } from './lib/png-meta.js'
 import { defineTool } from './lib/tool.js'
 import { createPool, fingerprintOf } from './lib/keypool.js'
 import { artistSourceOf, buildIndex, loadIndex, readArtistImage, searchArtists } from './lib/artists.js'
@@ -74,7 +75,7 @@ import {
 import { importMarket, loadMarket } from './lib/market.js'
 import { MODEL_OPTIONS, inpaintingModelFor, modelFamily } from './lib/models.js'
 import { LOG_DIR, clearLog, flushLog, logDays, logEvent, logFileOf, readLog } from './lib/log.js'
-import { artistById, coverFileOf, deleteUserArtist, loadArtists, saveUserArtist, setArtistCover } from './lib/artist-library.js'
+import { USER_ARTISTS_FILE, artistById, coverFileOf, deleteUserArtist, loadArtists, saveUserArtist, setArtistCover } from './lib/artist-library.js'
 import { randomUUID } from 'node:crypto'
 
 /** Directory/state name; also this plugin's profile entry id. */
@@ -530,6 +531,31 @@ function trackRenderProgress(requestId) {
   return { entry, onProgress, finish }
 }
 
+/**
+ * The vibe references of one tool call, as `[{ file, info, strength }]`.
+ *
+ * A single string is split on commas so several references fit one tool
+ * argument; each name is resolved against the img2img source directory later.
+ * NovelAI accepts more than three, but past three the result stops being
+ * something a person can steer, so this caps at three.
+ *
+ * @param args - the tool arguments.
+ * @returns the reference list, or `[]` when none were given.
+ */
+function vibeList(args) {
+  const raw = String(args?.vibe_images ?? '').trim()
+  if (raw === '') return []
+  const files = raw
+    .split(/[,，]/)
+    .map((name) => name.trim())
+    .filter((name) => name !== '')
+    .slice(0, 3)
+  if (files.length === 0) return []
+  const strength = Number.isFinite(Number(args?.vibe_strength)) ? Number(args.vibe_strength) : 0.6
+  const info = Number.isFinite(Number(args?.vibe_info)) ? Number(args.vibe_info) : 0.6
+  return files.map((file) => ({ file, info, strength }))
+}
+
 async function renderLogged(kind, options) {
   const started = Date.now()
   const trace = {}
@@ -624,6 +650,43 @@ function workbenchOptions(body) {
   if (typeof body.variety === 'boolean') out.variety = body.variety
   if (typeof body.transparentBackground === 'boolean') out.transparentBackground = body.transparentBackground
   if (typeof body.smea === 'string' && body.smea !== '') out.smea = body.smea
+  // 氛围转移 from the panel: a list of names inside the source directory plus
+  // the two weights. Accepted in either the tool's shape or a bare name list,
+  // because the panel shape is not part of any public contract.
+  const vibes = vibeRowsFromBody(body.vibes)
+  if (vibes.length > 0) out.vibes = vibes
+  return out
+}
+
+/**
+ * Normalise the panel's vibe payload.
+ *
+ * Accepts `[{ file, strength, info }]` (what this client sends) as well as
+ * `['a.png']` (a hand-written request), and drops anything without a file name
+ * rather than failing the whole render.
+ *
+ * @param raw - the request body's `vibes`.
+ * @returns a list of `{ file, info, strength }`, at most three.
+ */
+function vibeRowsFromBody(raw) {
+  if (!Array.isArray(raw)) return []
+  const out = []
+  for (const row of raw) {
+    if (out.length >= 3) break
+    if (typeof row === 'string') {
+      const name = row.trim()
+      if (name !== '') out.push({ file: name, info: 0.6, strength: 0.6 })
+      continue
+    }
+    if (row === null || typeof row !== 'object') continue
+    const name = String(row.file ?? row.name ?? '').trim()
+    if (name === '') continue
+    out.push({
+      file: name,
+      info: Number.isFinite(Number(row.info)) ? Number(row.info) : 0.6,
+      strength: Number.isFinite(Number(row.strength)) ? Number(row.strength) : 0.6
+    })
+  }
   return out
 }
 
@@ -1109,7 +1172,60 @@ function optionalNumber(value, fallback) {
  * @param options - prompt and optional per-call overrides.
  * @returns the written file records, the request and the pool's breadth.
  */
+/**
+ * Turn the caller's vibe references into encoded tensors.
+ *
+ * Each entry names a picture in the img2img source directory (the same sandbox
+ * `nai_img2img` reads from, so a reference can never be plucked from anywhere
+ * on disk) plus its two weights. Encoding happens here, once per reference, and
+ * the resulting base64 blobs ride to the render job as `vibes`.
+ *
+ * @param options - the render options; `options.vibes` is the caller's list.
+ * @param config - the loaded config, for base URL / token / proxy.
+ * @param sourceDir - the img2img source directory.
+ * @returns `[{ base64, info, strength, file }]`, or `[]` when none were asked for.
+ */
+async function resolveVibes(options, config, sourceDir) {
+  const raw = options.vibes
+  if (!Array.isArray(raw) || raw.length === 0) return []
+  const model = options.model || null
+  if (!model) throw new Error('氛围转移：需要先确定模型')
+  const pool = poolFor(config)
+  // Encode on an otherwise idle key so the free call does not queue behind a
+  // render. `candidates()` returns usable keys, least-recently-used first.
+  const idle = typeof pool.candidates === 'function' ? pool.candidates() : []
+  const token = idle[0]?.token ?? config.token ?? null
+  if (!token) throw new Error('氛围转移：没有可用的 API Key')
+  const proxy = proxyFor(config)
+  const out = []
+  for (const entry of raw) {
+    if (!entry) continue
+    // Two input shapes: a file name inside the source directory (the normal
+    // path from a tool call) or a pre-encoded blob (a cache hit / panel paste).
+    if (typeof entry.base64 === 'string' && entry.base64 !== '') {
+      out.push({ base64: entry.base64, info: entry.info, strength: entry.strength, file: entry.file ?? null })
+      continue
+    }
+    const filePath = String(entry.file ?? entry.sourceImage ?? '').trim()
+    if (filePath === '') throw new Error('氛围转移：参考图需要一个文件名')
+    const bytes = await readBaseImage({ root: sourceDir, filePath })
+    const encoded = await encodeVibe({
+      baseUrl: config.baseUrl,
+      token,
+      proxy,
+      signal: options.signal,
+      connectTimeoutMs: config.connectTimeoutMs,
+      image: Buffer.from(bytes.base64, 'base64'),
+      model,
+      informationExtracted: entry.info
+    })
+    out.push({ base64: encoded.base64, info: entry.info, strength: entry.strength, file: bytes.name ?? filePath })
+  }
+  return out
+}
+
 async function renderNow(options) {
+  if (options.exact !== null && typeof options.exact === 'object') return replayNow(options)
   const config = await load()
   const outputDir = await outputDirOf(config)
   const sourceDir = await sourceDirOf(config)
@@ -1174,6 +1290,7 @@ async function renderNow(options) {
   const maskImage = options.inlineMask ?? null
   if (maskImage !== null && baseImage === null) throw new Error('局部重绘需要底图与蒙版')
 
+
   // A prompt may arrive as a structured page — see lib/format.js and lib/comic.js.
   // Parsing here rather than in each caller means the tool, the panel and the
   // transcript button all handle both formats identically, and a plain prompt is
@@ -1224,15 +1341,21 @@ async function renderNow(options) {
   const steps = Math.min(50, Math.max(1, Number(options.steps) || settings.steps))
   const nSamples = Math.min(settings.maxImagesPerCall, Math.max(1, Number(options.nSamples) || 1))
   const model = options.model || settings.model
+  // 氛围转移 (Vibe Transfer): each reference is encoded to a style tensor here,
+  // once, so the encode uses the model this render will actually use. Free, and
+  // only reached when the caller asked for it.
+  const vibeRefs = await resolveVibes({ ...options, model }, config, sourceDir)
   // 解析得比用到它的地方早：UC 预设正文要按模型族选取，而负向在下面几十行就要组装完。
   const ucPreset = Number.isFinite(Number(options.ucPreset)) ? Number(options.ucPreset) : config.ucPreset
   const sampler = options.sampler || settings.sampler
   const scale = Number.isFinite(Number(options.scale)) ? Number(options.scale) : settings.scale
   let negativePrompt = options.negativePrompt ?? settings.negativePrompt
-  // The page's own negatives belong in the negative prompt, never the positive.
-  if (page !== null && page.negativePrompt !== '') {
-    negativePrompt = negativePrompt === '' ? page.negativePrompt : `${page.negativePrompt}, ${negativePrompt}`
-  }
+  // The page's own negatives belong in the negative prompt, never the positive —
+  // but they are added only at the end (below), to the flat negative. The scene
+  // caption of a split request must not carry them: `page.negativePrompt` holds
+  // every character's UC, and pooling those into the base caption suppresses
+  // the other characters' features (and the base was assembled twice).
+  const pageNegative = page !== null ? page.negativePrompt : ''
 
   // `artistId: -1` in the call overrides the setting, so one render can opt out.
   // Otherwise the mode's own artist string applies — a comic page and an
@@ -1283,6 +1406,10 @@ async function renderNow(options) {
   if (recipeFacts !== null && recipeFacts.negative !== '') {
     negativePrompt = negativePrompt === '' ? recipeFacts.negative : `${negativePrompt}, ${recipeFacts.negative}`
   }
+  // Everything shared (default negative, artist negative, UC preset, recipe) is
+  // in `sharedNegative`; the flat negative adds the page's own on top.
+  const sharedNegative = negativePrompt
+  negativePrompt = [pageNegative, sharedNegative].filter((text) => String(text ?? '').trim() !== '').join(', ')
 
   // 头部插入：放到**最前面**，连漫画配方也排在它后面。
   //
@@ -1335,6 +1462,9 @@ async function renderNow(options) {
     steps,
     scale,
     sampler,
+    // 氛围转移 tensors ride with the job so every variant and every retry
+    // re-sends the same encoded style rather than re-encoding per attempt.
+    ...(vibeRefs.length === 0 ? {} : { vibes: vibeRefs }),
     // A block's characters travel as their own captions with their own grid
     // positions — the only way `CharN UC` can apply to one character rather than
     // to the whole picture. Plain prompts send an empty list and keep the
@@ -1353,11 +1483,10 @@ async function renderNow(options) {
       page === null
         ? null
         : [
-            // 复用上面已组装好的负向（其中已含 UC 预设正文与画师串负向），
-            // 而不是从 options/config 重新拼一遍 —— 后者会漏掉预设正文，
-            // 且原本连 page.negativePrompt 都没带，使 `<image>` 块与普通提示词
-            // 在同一档位下得到不同的负向。
-            negativePrompt,
+            // The shared negative (UC preset text, artist negative, default
+            // negative) plus the scene's own UC — not the flat negative, which
+            // also carries every character's UC (those go to their own captions).
+            sharedNegative,
             page.sceneNegative
           ]
             .filter((text) => String(text ?? '').trim() !== '')
@@ -1376,6 +1505,9 @@ async function renderNow(options) {
     variety: options.variety === undefined || options.variety === null ? config.variety === true : options.variety === true,
     transparent: transparentOn,
     smea: String(options.smea ?? config.smea ?? 'off'),
+    // 氛围转移: already-encoded tensors (see resolveVibes). `buildPayload` turns
+    // each into the three parallel reference_* arrays the API expects.
+    ...(vibeRefs.length === 0 ? {} : { vibes: vibeRefs }),
     // zip (smallest transfer) / json (nai-dbgen-style relay) / auto, from the
     // plugin's 「解码」 setting; generate() turns it into the Accept header.
     accept: acceptForDecode(config.decode),
@@ -1421,10 +1553,14 @@ async function renderNow(options) {
   // its NovelAI request torn down (the panel closing, or 取消出图).
   const images = await Promise.all(Array.from({ length: nSamples }, () => activePool.enqueue({ ...job }, { signal: options.signal })))
   // Never persist the base64 payloads: the sidecar is a reproducibility record,
-  // and a 1.7 MB PNG becomes ~2.3 MB of base64 per job.
+  // and a 1.7 MB PNG becomes ~2.3 MB of base64 per job. A vibe tensor is ~65 KB
+  // of base64 per reference, so it is reduced to the fact that it was used plus
+  // the source name and weights — enough to find the reference again, not to
+  // replay the bytes.
   const {
     image: _base64,
     mask: _mask,
+    vibes: _vibes,
     onProgress: _onProgress,
     requestTimeoutMs: _requestTimeoutMs,
     useNewSharedTrial: _useNewSharedTrial,
@@ -1434,6 +1570,16 @@ async function renderNow(options) {
     ...recordable,
     nSamples,
     artist: styleName,
+    // 氛围转移 provenance, without the tensors themselves.
+    ...(vibeRefs.length === 0
+      ? {}
+      : {
+          vibes: vibeRefs.map((row) => ({
+            file: row.file ?? null,
+            informationExtracted: Number.isFinite(Number(row.info)) ? Number(row.info) : 0.7,
+            strength: Number.isFinite(Number(row.strength)) ? Number(row.strength) : 0.6
+          }))
+        }),
     // Enough to load the render back into the workbench: the text as written,
     // the structured caption (before substitution), the toggle, and the artist.
     userPrompt,
@@ -1524,6 +1670,114 @@ async function renderNow(options) {
             positiveChars: page.prompt.length,
             negativeChars: page.negativePrompt.length
           }
+  }
+}
+
+/**
+ * Re-render a recorded NovelAI image exactly as it was made.
+ *
+ * `options.exact` is `readNaiImage(png).replay` (lib/png-meta.js): the base and
+ * character captions as they reached the model, and every sampling switch. None
+ * of the usual assembly runs — no artist string, header, UC preset text, quality
+ * tags or default negative — because the recorded captions already contain
+ * whatever the original client added, and adding ours on top would change the
+ * picture. Per-call overrides (seed, size, steps…) still apply, so a recorded
+ * image can be replayed with a new seed for variations.
+ *
+ * @param options - `{ exact, seed?, width?, height?, steps?, scale?, sampler?, model?, nSamples?, signal?, onProgress?, trace? }`.
+ * @returns the same shape as renderNow.
+ */
+async function replayNow(options) {
+  const config = await load()
+  const outputDir = await outputDirOf(config)
+  await mkdir(outputDir, { recursive: true }).catch(() => {})
+  const exact = options.exact
+  const pick = (value, fallback) => (value === undefined || value === null || value === '' ? fallback : value)
+  const model = String(pick(options.model, pick(exact.model, config.model)))
+  const width = legalAxis(pick(options.width, exact.width), config.width)
+  const height = legalAxis(pick(options.height, exact.height), config.height)
+  const steps = Math.min(50, Math.max(1, Number(pick(options.steps, exact.steps)) || config.steps))
+  const scale = Number(pick(options.scale, pick(exact.scale, config.scale)))
+  const sampler = String(pick(options.sampler, pick(exact.sampler, config.sampler)))
+  const seed = Number(pick(options.seed, exact.seed))
+  const nSamples = Math.min(Number(config.maxImagesPerCall) || 4, Math.max(1, Number(options.nSamples) || 1))
+  const prompt = String(exact.prompt ?? '').trim()
+  if (prompt === '' && !(Array.isArray(exact.characters) && exact.characters.length > 0)) throw new Error('这张图的记录里没有提示词')
+  const negativePrompt = String(exact.negativePrompt ?? '')
+  const characters = (Array.isArray(exact.characters) ? exact.characters : []).map((row) => ({
+    positive: String(row?.positive ?? ''),
+    negative: String(row?.negative ?? ''),
+    centers: row?.center && typeof row.center === 'object' ? [row.center] : []
+  }))
+  const activePool = poolFor(config)
+  if (!activePool.configured()) throw new Error('没有可用的 NovelAI API Key。侧栏面板里添加，或导出 NAI_TOKEN。')
+  const pinned = Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : null
+  const job = {
+    prompt,
+    negativePrompt,
+    model,
+    width,
+    height,
+    steps,
+    scale,
+    sampler,
+    characters,
+    sceneCaption: characters.length > 0 ? prompt : null,
+    sceneNegative: characters.length > 0 ? negativePrompt : null,
+    // The UC preset text is already inside the recorded negative; the field only
+    // labels the request, so the record's own hint is reused when present.
+    ucPreset: Number.isFinite(Number(exact.tagHintUcPreset)) ? Number(exact.tagHintUcPreset) : 4,
+    nSamples: 1,
+    seed: pinned,
+    cfgRescale: exact.cfgRescale ?? 0,
+    noiseSchedule: noiseScheduleFor(model, exact.noiseSchedule ?? 'karras'),
+    variety: false,
+    transparent: exact.transparentBackground === true,
+    smea: exact.smDyn === true ? 'smea_dyn' : exact.sm === true ? 'smea' : 'off',
+    exact,
+    accept: acceptForDecode(config.decode),
+    requestTimeoutMs: Number(config.requestTimeoutMs) || 300000,
+    useNewSharedTrial: config.useNewSharedTrial !== false,
+    ...(typeof options.onProgress === 'function' ? { onProgress: options.onProgress } : {})
+  }
+  if (options.trace !== null && typeof options.trace === 'object') {
+    Object.assign(options.trace, { model, width, height, steps, nSamples, characters: characters.length, artistId: -1, artistName: null, seed: pinned, prompt, replay: true })
+  }
+  // Variants after the first get a fresh seed: four copies of one pinned seed
+  // would be four identical images.
+  const images = await Promise.all(
+    Array.from({ length: nSamples }, (_, index) =>
+      activePool.enqueue({ ...job, ...(index > 0 ? { seed: null } : {}) }, { signal: options.signal })
+    )
+  )
+  const { onProgress: _onProgress, requestTimeoutMs: _timeout, useNewSharedTrial: _trial, exact: _exact, ...recordable } = job
+  const request = {
+    ...recordable,
+    nSamples,
+    artist: null,
+    artistId: -1,
+    userPrompt: prompt,
+    caption: {
+      base: prompt,
+      baseNegative: negativePrompt,
+      characters: characters.map((row, index) => ({ name: `Char${index + 1}`, positive: row.positive, negative: row.negative, center: row.centers[0] ?? null }))
+    },
+    replay: { from: String(options.replayFrom ?? ''), params: exact }
+  }
+  const files = await persist({ outputDir, images, request })
+  for (const file of files) await fullRef(file.file, file.name).catch(() => null)
+  await enforceKeepImages(config, outputDir)
+  return {
+    files,
+    request,
+    source: null,
+    mask: null,
+    weight: costWeight({ width, height, steps, nSamples }),
+    concurrency: activePool.concurrency,
+    artist: null,
+    replacedCharacters: [],
+    artistWeight: null,
+    block: null
   }
 }
 
@@ -2143,6 +2397,23 @@ export function apply(ctx) {
           type: 'boolean',
           description:
             'Append the official quality tags to the end of the positive prompt for this call. Off by default.'
+        },
+        vibe_images: {
+          type: 'string',
+          description:
+            '氛围转移 (Vibe Transfer): one or more reference pictures, by file name in the img2img source directory, comma-separated (up to 3). ' +
+            'They are encoded to style tensors (free) and pull colour, lighting and material feel onto the render without copying their subject. ' +
+            'Combine with an artist string to say "this artist\'s hand, that picture\'s mood".'
+        },
+        vibe_strength: {
+          type: 'number',
+          description:
+            'How hard the reference pulls, 0..1, applied to every reference. 0.3 = a whisper of colour, 0.6 = clear mood match (default), 0.9 = floods the frame and starts overriding the prompt.'
+        },
+        vibe_info: {
+          type: 'number',
+          description:
+            'How much of each reference\u2019s own identity the encoder keeps, 0..1. 0.5-0.6 keeps the atmosphere and leaves the subject to the prompt (default 0.6); high values drag the original composition along.'
         }
       },
       output: {
@@ -2169,7 +2440,10 @@ export function apply(ctx) {
           // `uc_preset: 2` looked accepted but never reached the request. The
           // parameter was absent from this tool's schema entirely.
           ucPreset: args.uc_preset,
-          qualityToggle: args.quality_toggle
+          qualityToggle: args.quality_toggle,
+          // 氛围转移: names stay names here; renderNow reads and encodes them
+          // once the model is known.
+          ...(vibeList(args).length === 0 ? {} : { vibes: vibeList(args) })
         })
         const lines = files.map((file, index) => {
           const bits = [`${file.bytes} 字节`]
@@ -2221,6 +2495,74 @@ export function apply(ctx) {
         // The model reads `text`; the phone draws `presentationMeta` from the
         // structured fields. Both come from the same render record.
         return { text, files, request, weight, concurrency, artist, artistWeight, block, logId }
+      }
+    })
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'nai_read_png',
+      description:
+        'Read the generation record NovelAI stores inside one of its PNGs — from the official website or from this plugin — and optionally re-render it exactly. ' +
+        'Returns the model, seed, sampler, steps, guidance, CFG rescale, the scene caption, each character caption with its position, and the negatives. ' +
+        'The record is read from the PNG text chunks, or from the hidden alpha-channel copy when the text was stripped; a JPEG, a screenshot or a chat-compressed image has lost it. ' +
+        'With `replay: true` the image is rendered again with every recorded switch and NO artist string, UC preset or quality tags added (they are already inside the recorded prompt), so the same seed gives the same picture as the website. Pass `seed` to replay with a new seed for variations.',
+      parameters: {
+        path: {
+          type: 'string',
+          required: true,
+          description: 'Absolute path to the PNG, or a file name inside the output gallery.'
+        },
+        replay: { type: 'boolean', description: 'Render it again with the recorded parameters. Default false: read only, costs nothing.' },
+        seed: { type: 'integer', description: 'Replay with this seed instead of the recorded one.' },
+        n_samples: { type: 'integer', description: 'Variants when replaying; variants after the first get fresh seeds.' }
+      },
+      output: {
+        schema: { type: 'object' },
+        render: textRender((value) => (typeof value === 'string' ? value : (value?.text ?? '')))
+      },
+      async execute(args, exec) {
+        exec.signal.throwIfAborted()
+        const raw = String(args.path ?? '').trim()
+        if (raw === '') throw new Error('path is required')
+        let file = raw
+        if (!isAbsolute(raw)) {
+          const config = await load()
+          file = safeJoin(await outputDirOf(config), raw)
+        }
+        const meta = readNaiImage(await readFile(file))
+        if (!meta.ok) return { text: `读不出参数：${meta.reason}`, ok: false }
+        const p = meta.params
+        const summary = [
+          `来源：${meta.source ?? '未知'}（${meta.origin === 'stealth' ? '从 alpha 通道隐写读出' : 'PNG 文本块'}）→ ${meta.model ?? '模型未知'}`,
+          `${p.width}×${p.height} · seed ${p.seed} · ${p.sampler} · ${p.steps} 步 · 引导 ${p.scale} · CFG rescale ${p.cfgRescale} · ${p.noiseSchedule}` +
+            ` · prefer_brownian ${p.preferBrownian} · deliberate_euler_ancestral_bug ${p.deliberateEulerAncestralBug}` +
+            (p.skipCfgAboveSigma !== null ? ` · variety(skip_cfg_above_sigma ${p.skipCfgAboveSigma.toFixed(2)})` : ''),
+          `正向（场景）：${meta.caption.base}`,
+          ...meta.caption.characters.map(
+            (row) => `${row.name}${row.center ? ` @(${row.center.x},${row.center.y})` : ''}：${row.positive}${row.negative ? `\\n  UC：${row.negative}` : ''}`
+          ),
+          `负向：${meta.caption.baseNegative}`,
+          ...meta.notes.map((note) => `⚠ ${note}`)
+        ]
+        if (args.replay !== true) return { text: summary.join('\\n'), ok: true, meta }
+        const { files, request, weight } = await renderLogged('tool:replay', {
+          prompt: meta.replay.prompt,
+          exact: meta.replay,
+          replayFrom: basename(file),
+          ...(Number.isInteger(args.seed) ? { seed: args.seed } : {}),
+          nSamples: args.n_samples
+        })
+        const text = [
+          ...summary,
+          '',
+          `已按原图参数复现 ${files.length} 张 · ${request.width}×${request.height} · 相对消耗 ${weight}`,
+          ...files.map((row) => `${row.file}  seed ${row.seed}`),
+          '',
+          '在回复里内联显示：',
+          files.map((row) => `![复现](${row.file})`).join('\\n')
+        ].join('\\n')
+        return { text, ok: true, meta, files, request }
       }
     })
   )
@@ -2745,7 +3087,8 @@ export function apply(ctx) {
       name: 'nai_artists',
       description:
         'Search the imported artist-string archive (画师串). Each entry is a ready-made style prefix — a positive prompt, an optional negative prompt, and a reference image. ' +
-        'Call with `query` to search, or with `id` to read one entry in full so it can be prepended to a render.',
+        'Call with `query` to search, or with `id` to read one entry in full so it can be prepended to a render. ' +
+        'To add a new artist string the user dictates in the chat, use `nai_artist_save` instead — this tool only reads and selects.',
       parameters: {
         query: { type: 'string', description: 'Search text over names and prompts. Omit to list everything.' },
         id: { type: 'integer', description: 'Read one entry in full by id.' },
@@ -2797,6 +3140,70 @@ export function apply(ctx) {
           )
         }
         if (rows.length > 0) lines.push('\n用 nai_artists({ id }) 读全文。')
+        return lines.join('\n')
+      }
+    })
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'nai_artist_save',
+      description:
+        'Create a new artist string (画师串) in 「我的画师串」, or update one, without importing a file. ' +
+        'Use this when the user asks in the chat window to add, save, tweak or overwrite an artist string — they do not have to touch the panel or run import-artists.mjs. ' +
+        'Pass `name` plus `positive_prompt` (and optionally `negative_prompt`). ' +
+        'Pass `id` to overwrite an existing entry instead of creating a new one (an archive id edits that entry, a user id ≥100000 updates 「我的画师串」). ' +
+        'Set `apply: true` to also make the saved string the one every later render uses.',
+      parameters: {
+        name: { type: 'string', required: true, description: '画师串名称，例如「厚涂电影感 · 自调」.' },
+        positive_prompt: {
+          type: 'string',
+          required: true,
+          description: '正向提示词（画师 tag、风格词等）。多段用换行或逗号分隔，原样保存。'
+        },
+        negative_prompt: { type: 'string', description: '负向提示词，可省略。' },
+        id: {
+          type: 'integer',
+          description: '要覆盖的已有画师串 id：0–99999 是导入的画师串（会写一条改动覆盖原文），≥100000 是「我的画师串」。不传则新建。'
+        },
+        apply: { type: 'boolean', description: '同时把它设为当前画师串，之后的出图都用它。默认 false。' }
+      },
+      output: { schema: { type: 'string' }, render: textRender((value) => value) },
+      async execute(args, exec) {
+        exec.signal.throwIfAborted()
+        const config = await load()
+        const name = String(args.name ?? '').trim()
+        if (name === '') return '没有名称，画师串没有保存。请给一个名称，例如「厚涂电影感 · 自调」。'
+        const positivePrompt = String(args.positive_prompt ?? '').trim()
+        if (positivePrompt === '') return '正向提示词是空的，画师串没有保存。至少给一段正向提示词。'
+        const negativePrompt = String(args.negative_prompt ?? '').trim()
+        const hasId = args.id !== undefined && args.id !== null
+        let result
+        try {
+          result = await saveUserArtist(config, {
+            ...(hasId ? { id: Number(args.id) } : {}),
+            name,
+            positivePrompt,
+            negativePrompt
+          })
+        } catch (error) {
+          return `没有保存：${error?.message ?? error}`
+        }
+        // 保存后让面板自己去拿一份新的列表（它每 4 秒比一次 /artists/version），
+        // 所以在聊天里存下的画师串不用刷新页面就会出现。
+        if (args.apply === true && Number.isFinite(Number(result.id))) {
+          await save({ artistId: Number(result.id) })
+        }
+        const entry = result.entry ?? {}
+        const total = (await loadArtists(await load())).entries.length
+        const lines = [
+          `${hasId ? '已更新' : '已新建'}画师串：「${entry.name ?? name}」(#${result.id})`,
+          `正向 ${String(entry.positivePrompt ?? positivePrompt).length} 字符` +
+            (negativePrompt === '' ? '，无负向' : `，负向 ${String(entry.negativePrompt ?? negativePrompt).length} 字符`),
+          `现在共 ${total} 条画师串，它已出现在面板的「我的画师串」里。`
+        ]
+        if (args.apply === true) lines.push(`已设为当前画师串，之后的出图都会用它。`)
+        else lines.push(`要用它出图：nai_artists({ select: ${result.id} })，或 nai_generate 时传 artist_id=${result.id}。`)
         return lines.join('\n')
       }
     })
@@ -3617,6 +4024,22 @@ export function apply(ctx) {
         return sendJson(res, 200, entry)
       }
 
+      // A cheap revision stamp the panel polls so a 画师串 saved from the chat
+      // window (or another tab) shows up without a reload. Only two `stat`s.
+      if (method === 'GET' && route === '/artists/version') {
+        const config = await load()
+        const stamp = async (file) => {
+          try {
+            const info = await stat(file)
+            return `${Number(info.mtimeMs) || 0}:${Number(info.size) || 0}`
+          } catch {
+            return '0:0'
+          }
+        }
+        const [user, index] = await Promise.all([stamp(USER_ARTISTS_FILE), stamp(config.artistIndex)])
+        return sendJson(res, 200, { rev: `${user}|${index}` })
+      }
+
       // Save an artist string from the workbench: an archive id writes its
       // override, a user id updates it, no id creates a 「我的画师串」 entry.
       // `coverFrom` names a gallery PNG (checked like `/file`) to use as the cover.
@@ -3978,6 +4401,10 @@ export function apply(ctx) {
             scale: body.scale === undefined ? undefined : Number(body.scale),
             ucPreset: body.ucPreset === undefined ? undefined : Number(body.ucPreset),
             qualityToggle: body.qualityToggle,
+            // 「按原图参数复现」: the record read by /png-meta, sent back verbatim.
+            ...(body.exact !== null && typeof body.exact === 'object' && !Array.isArray(body.exact)
+              ? { exact: body.exact, replayFrom: typeof body.replayFrom === 'string' ? body.replayFrom.slice(0, 200) : '' }
+              : {}),
             sourceImage,
             strength: body.strength === undefined ? undefined : Number(body.strength),
             noise: body.noise === undefined ? undefined : Number(body.noise),
@@ -3990,6 +4417,25 @@ export function apply(ctx) {
           tracker?.finish('error')
           throw error
         }
+      }
+
+      // The NovelAI record inside an image: the gallery by name, or the raw bytes
+      // of a picked / dropped file in the body (any NovelAI PNG, official or ours).
+      if (route === '/png-meta' && (method === 'GET' || method === 'POST')) {
+        let png
+        let label
+        if (method === 'GET') {
+          const config = await load()
+          const outputDir = await outputDirOf(config)
+          const name = url.searchParams.get('name')
+          png = await readFile(safeJoin(outputDir, name))
+          label = String(name ?? '')
+        } else {
+          png = await readBinaryBody(req, 32 * 1024 * 1024)
+          label = String(url.searchParams.get('name') ?? '').slice(0, 200)
+        }
+        const meta = readNaiImage(png)
+        return sendJson(res, meta.ok ? 200 : 422, { ...meta, name: label, ...(meta.ok ? {} : { error: meta.reason }) })
       }
 
       // The sidecar of one gallery image: the request that produced it, so the

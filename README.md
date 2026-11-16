@@ -75,7 +75,9 @@ dsh plugin --profile web add /root/.dsh/dsh-go/plugins/dsh-nai-imagegen
 | `nai_status` | 插件状态 |
 | `nai_probe` | 连通性与订阅检测（不花 Anlas） |
 | `nai_keys` | Key 池管理 |
-| `nai_artists` | 画师串 |
+| `nai_artists` | 画师串（检索 / 选用） |
+| `nai_artist_save` | 新建或更新画师串（聊天里直接存，不必导入文件） |
+| `nai_read_png` | 读回 PNG 里的生成参数，并可原样复现 |
 | `nai_character_edit` | 用提示词改写角色特征 |
 | `nai_write_prompt` | 一句话写成结构化提示词（含角色标签），不出图 |
 | `nai_doctor` | 能力自检 |

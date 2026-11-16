@@ -75,7 +75,9 @@ The agent can change the same settings with `nai_config`, or you can edit `$DSH_
 | `nai_status` | plugin status |
 | `nai_probe` | connectivity and subscription probe (free) |
 | `nai_keys` | key-pool management |
-| `nai_artists` | artist strings |
+| `nai_artists` | artist strings (search / select) |
+| `nai_artist_save` | create or update an artist string from the chat, no file import |
+| `nai_read_png` | read a PNG's generation record and replay it exactly |
 | `nai_character_edit` | rewrite character features with a prompt |
 | `nai_write_prompt` | one sentence to a structured prompt (with character tags), no render |
 | `nai_doctor` | capability self-check |
