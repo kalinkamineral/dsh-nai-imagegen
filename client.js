@@ -517,6 +517,11 @@ window.__ModuleLoader__.load({
       sidePngClear: '退出复现模式',
       sidePngReplayDone: '已按原图参数复现',
       sidePngNotes: '注意',
+      sidePngReaderTitle: '读图参数',
+      sidePngReaderEmpty: '已读取这张图的参数，但里面没有提示词。',
+      sidePngReaderHint: '这里只是把原图记录下来的参数列出来给你看，不会占用下面的「当前提示词」；要编辑就点「填入编辑器」，之后也能按原图复现。',
+      sidePngToEditor: '填入编辑器',
+      sidePngUseSeed: '用这个种子',
       sideRefUnpick: '取消参考',
       sideRemove: '移除',
       sideReplaceKw: '替换角色关键字',
@@ -1098,6 +1103,11 @@ window.__ModuleLoader__.load({
       sidePngClear: 'Leave replay',
       sidePngReplayDone: 'Replayed with the recorded parameters',
       sidePngNotes: 'Note',
+      sidePngReaderTitle: 'Read PNG',
+      sidePngReaderEmpty: 'The parameters were read, but this image carries no prompt.',
+      sidePngReaderHint: 'A read-only copy of the record, kept out of the prompt box below. Load it into the editor to change it, then replay from there.',
+      sidePngToEditor: 'Load into editor',
+      sidePngUseSeed: 'Use this seed',
       sideRefUnpick: 'Stop using',
       sideRemove: 'Remove',
       sideReplaceKw: 'Replace character keywords',
@@ -1884,6 +1894,16 @@ input[type=range].nai-s-range{width:100%;accent-color:var(--primary)}
 .nai-s-composer-bar{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-top:1px solid var(--line-soft);background:var(--wash)}
 .nai-s-composer-bar .nai-s-in{width:auto;height:28px}
 .nai-s-receipt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink3)}
+/* 读图参数：单独一栏展示，不占用「当前提示词」的输入框 */
+.nai-s-reader{border:1px solid var(--line);border-radius:var(--r-md);background:var(--wash);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.nai-s-reader-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.nai-s-reader-head>strong{font-size:12px;font-weight:600;color:var(--ink2)}
+.nai-s-reader-file{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink3);max-width:60%}
+.nai-s-reader-meta{display:flex;flex-wrap:wrap;gap:4px 6px}
+.nai-s-reader-field{display:flex;flex-direction:column;gap:3px}
+.nai-s-reader-field>span{font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--ink3)}
+.nai-s-reader-val{max-height:96px;overflow:auto;margin:0;padding:7px 9px;border:1px solid var(--line-soft);border-radius:var(--r-sm);background:var(--paper);color:var(--ink);font-family:var(--mono);font-size:11.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.nai-s-reader-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .nai-s-pills{display:flex;flex-wrap:wrap;gap:6px}
 .nai-s-pill{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border:0;border-radius:11px;background:var(--wash);color:var(--ink2);font:inherit;font-size:11.5px}
 .nai-s-pill[data-tone="ok"]{color:var(--ok);background:color-mix(in srgb,var(--ok) 10%,transparent)}
@@ -2360,6 +2380,8 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
       const vibeFileInput = React.useRef(null)
       /** A NovelAI record read from a PNG (`/png-meta`), for 「按原图复现」. */
       const [pngMeta, setPngMeta] = React.useState(null)
+      /** The record read by 「读图参数」, shown in its own block — never typed into the prompt box on its own. */
+      const [pngRead, setPngRead] = React.useState(null)
       const pngFileInput = React.useRef(null)
       const [pickedRefs, setPickedRefs] = React.useState(() => (Array.isArray(draft0.pickedRefs) ? draft0.pickedRefs : []))
       const [pickedChars, setPickedChars] = React.useState(() => (Array.isArray(draft0.pickedChars) ? draft0.pickedChars : []))
@@ -3880,9 +3902,10 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
 
       /**
        * 读图参数: send the PNG bytes to the Host, which reads the NovelAI record
-       * (text chunks, or the alpha-channel copy) and answers with a workbench
-       * caption plus the exact parameters. The editor is filled from it; the
-       * record is kept for 「按原图复现」.
+       * (text chunks, or the alpha-channel copy). The result is shown in its own
+       * read-only block (`pngRead`) — it does NOT overwrite 「当前提示词」. A second
+       * click (「填入编辑器」) is what copies it into the prompt box, so reading a
+       * picture never destroys work already typed there.
        */
       const readPngInto = async (file) => {
         if (!file) return
@@ -3897,9 +3920,19 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           })
           const body = JSON.parse((await response.text()) || '{}')
           if (!response.ok || body.ok !== true) throw new Error(body.error || body.reason || `HTTP ${response.status}`)
-          applyCaption(body.caption)
-          if (Number(body.params?.seed) > 0) setSeedText(String(body.params.seed))
-          setPngMeta({ ...body, name: file.name || 'image.png' })
+          // 只落到「读图参数」这一栏，提示词框保持原样。
+          setPngRead({
+            ok: body.ok === true,
+            name: file.name || 'image.png',
+            caption: body.caption ?? { base: '', baseNegative: '', characters: [] },
+            params: body.params ?? {},
+            notes: Array.isArray(body.notes) ? body.notes : [],
+            model: body.model ?? null,
+            source: body.source ?? null,
+            // 复现用的完整记录留在这里，「填入编辑器」后再交给 onReplay。
+            replay: body.replay ?? null
+          })
+          setPngMeta(null)
           setNotice(t('sidePngLoaded'))
         } catch (err) {
           setError(err.message)
@@ -3908,13 +3941,28 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
         }
       }
 
+      /** 把「读图参数」里的提示词与角色抄进编辑器，并接上复现记录。 */
+      const loadPngReadIntoEditor = () => {
+        if (pngRead === null) return
+        applyCaption(pngRead.caption)
+        const seed = Number(pngRead.params?.seed)
+        if (Number(seed) > 0) setSeedText(String(seed))
+        setPngMeta({ ...pngRead, params: pngRead.params, editor: true })
+        setNotice(t('sidePngLoaded'))
+      }
+
       /**
-       * 按原图复现: render with the record exactly. The caption as it stands in
-       * the editor replaces the recorded one, so a read-in image can be tweaked
-       * (a tag changed, a character moved) and still keep every recorded switch.
+       * 按原图复现: render with the record exactly.
+       *
+       * Unless 「填入编辑器」 was clicked first (`pngMeta.editor`), the recorded
+       * caption is what goes out — the prompt box never had to be touched. Once
+       * it was filled in, the editor's caption wins instead, so a read-in image
+       * can be tweaked (a tag changed, a character moved) and still keep every
+       * recorded switch.
        */
-      const onReplay = async (newSeed) => {
-        if (pngMeta === null) return
+      const onReplay = async (newSeed, record = null) => {
+        const source = record ?? pngMeta
+        if (source === null) return
         setBusy('render')
         const controller = new AbortController()
         renderAbort.current = controller
@@ -3923,33 +3971,41 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
         const requestId = `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
         const stopProgress = watchRenderProgress(requestId)
         try {
-          const caption = sideCaption()
+          const fromEditor = source.editor === true
+          const caption = fromEditor ? sideCaption() : null
           const exact = {
-            ...pngMeta.replay,
-            prompt: caption === null ? prompt : String(caption.base ?? ''),
-            negativePrompt: caption === null ? baseNeg : String(caption.baseNegative ?? ''),
-            characters:
-              caption === null
+            ...source.replay,
+            prompt: fromEditor ? (caption === null ? prompt : String(caption.base ?? '')) : String(source.replay?.prompt ?? ''),
+            negativePrompt: fromEditor
+              ? caption === null
+                ? baseNeg
+                : String(caption.baseNegative ?? '')
+              : String(source.replay?.negativePrompt ?? ''),
+            characters: fromEditor
+              ? caption === null
                 ? []
                 : (caption.characters ?? []).map((row) => ({
                     positive: String(row.positive ?? ''),
                     negative: String(row.negative ?? ''),
                     center: row.center && typeof row.center === 'object' ? row.center : null
                   }))
+              : (Array.isArray(source.replay?.characters) ? source.replay.characters : [])
           }
           const seed = Number(seedText)
           const pinned = newSeed
             ? Math.floor(Math.random() * 4294967294) + 1
-            : seedText.trim() !== '' && Number.isInteger(seed) && seed > 0
+            : fromEditor && seedText.trim() !== '' && Number.isInteger(seed) && seed > 0
               ? seed
-              : null
+              : Number(source.replay?.seed) > 0
+                ? Number(source.replay.seed)
+                : null
           const body = await api('/generate', {
             method: 'POST',
             signal: controller.signal,
             body: JSON.stringify({
               prompt: exact.prompt || ' ',
               exact,
-              replayFrom: pngMeta.name,
+              replayFrom: source.name,
               nSamples: Number(variants) || 1,
               requestId,
               ...(pinned === null ? {} : { seed: pinned })
@@ -4412,7 +4468,7 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
             // Keep the image's own record too, so 「按原图复现」 is one click away.
             api(`/png-meta?name=${encodeURIComponent(current)}`)
               .then((body) => {
-                if (body?.ok === true) setPngMeta({ ...body, name: current })
+                if (body?.ok === true) setPngMeta({ ...body, name: current, editor: true })
               })
               .catch(() => {})
             setSideNav('create')
@@ -5703,6 +5759,91 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                   )
                 ),
                 h('div', { className: 'nai-s-card-body' }, h('p', { className: 'nai-s-hint', style: { whiteSpace: 'pre-wrap' } }, lastWrite.analysis || t('sideNoAnalysis')))
+              )
+            : null,
+
+          // 读图参数: its own block, never typed into 「当前提示词」.
+          pngRead !== null
+            ? h(
+                'div',
+                { className: 'nai-s-reader' },
+                h(
+                  'div',
+                  { className: 'nai-s-reader-head' },
+                  h('strong', null, t('sidePngReaderTitle')),
+                  h('span', { className: 'nai-s-reader-file nai-s-mono', title: pngRead.source ?? '' }, pngRead.name),
+                  h('span', { className: 'nai-s-sp' }),
+                  btn(t('sidePngToEditor'), loadPngReadIntoEditor, { kind: 'primary', size: 's' }),
+                  btn(t('sidePngClear'), () => setPngRead(null), { kind: 'ghost', size: 's' })
+                ),
+                h(
+                  'div',
+                  { className: 'nai-s-reader-meta' },
+                  [
+                    pngRead.model,
+                    pngRead.params?.width && pngRead.params?.height ? `${pngRead.params.width}×${pngRead.params.height}` : null,
+                    pngRead.params?.seed !== null && pngRead.params?.seed !== undefined ? `seed ${pngRead.params.seed}` : null,
+                    pngRead.params?.sampler,
+                    pngRead.params?.steps !== null && pngRead.params?.steps !== undefined ? `${pngRead.params.steps} steps` : null,
+                    pngRead.params?.scale !== null && pngRead.params?.scale !== undefined ? `cfg ${pngRead.params.scale}` : null,
+                    pngRead.params?.cfgRescale ? `rescale ${pngRead.params.cfgRescale}` : null
+                  ]
+                    .filter(Boolean)
+                    .map((text, index) => h('span', { key: index, className: 'nai-s-pill' }, text))
+                ),
+                String(pngRead.caption?.base ?? '').trim() === '' && (pngRead.caption?.characters ?? []).length === 0
+                  ? h('p', { className: 'nai-s-hint', style: { margin: 0 } }, t('sidePngReaderEmpty'))
+                  : h(
+                      'label',
+                      { className: 'nai-s-reader-field' },
+                      h('span', null, t('sideArtPositive')),
+                      h('pre', { className: 'nai-s-reader-val' }, String(pngRead.caption?.base ?? ''))
+                    ),
+                String(pngRead.caption?.baseNegative ?? '').trim() === ''
+                  ? null
+                  : h(
+                      'label',
+                      { className: 'nai-s-reader-field' },
+                      h('span', null, t('sideArtNegative')),
+                      h('pre', { className: 'nai-s-reader-val' }, String(pngRead.caption.baseNegative))
+                    ),
+                (pngRead.caption?.characters ?? []).map((row, index) =>
+                  String(row?.positive ?? '').trim() === '' && String(row?.negative ?? '').trim() === ''
+                    ? null
+                    : h(
+                        'label',
+                        { key: index, className: 'nai-s-reader-field' },
+                        h('span', null, `${t('sideCharTok')} ${row?.name ?? `#${index + 1}`}`),
+                        h(
+                          'pre',
+                          { className: 'nai-s-reader-val' },
+                          [String(row?.positive ?? '').trim(), String(row?.negative ?? '').trim() ? `${t('sideArtNegative')}: ${String(row.negative).trim()}` : '']
+                            .filter(Boolean)
+                            .join('\n')
+                        )
+                      )
+                ),
+                (pngRead.notes ?? []).length > 0
+                  ? h('p', { className: 'nai-s-hint', style: { margin: 0, color: 'var(--warn)' } }, `${t('sidePngNotes')}：${pngRead.notes.join('；')}`)
+                  : null,
+                h(
+                  'div',
+                  { className: 'nai-s-reader-row' },
+                  Number(pngRead.params?.seed) > 0
+                    ? btn(t('sidePngUseSeed'), () => setSeedText(String(Number(pngRead.params.seed))), { kind: 'ghost', size: 's' })
+                    : null,
+                  pngRead.replay !== null
+                    ? btn(busy === 'render' ? t('testing') : t('sidePngReplay'), () => onReplay(false, { ...pngRead, editor: false }), {
+                        size: 's',
+                        title: t('sidePngReplayHint'),
+                        disabled: busy === 'render'
+                      })
+                    : null,
+                  pngRead.replay !== null
+                    ? btn(t('sidePngReplaySeed'), () => onReplay(true, { ...pngRead, editor: false }), { size: 's', disabled: busy === 'render' })
+                    : null,
+                  h('span', { className: 'nai-s-hint', style: { flex: 1, margin: 0 } }, t('sidePngReaderHint'))
+                )
               )
             : null,
 
