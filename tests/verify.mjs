@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { deflateSync, gzipSync } from 'node:zlib'
 import { acceptForDecode, buildPayload, decodeResponse, generateUrlCandidates, insideFreeBand, readBaseImage, sniffImage, MAX_SOURCE_BYTES, MAX_SOURCE_PIXELS } from '../lib/nai.js'
-import { readNaiImage, readStealth } from '../lib/png-meta.js'
+import { readNaiImage, readStealth, imageKind } from '../lib/png-meta.js'
 import { httpRequest } from '../lib/net.js'
 import { createServer } from 'node:http'
 import { defaults as configDefaults, sourceDirOf } from '../lib/config.js'
@@ -1464,6 +1464,154 @@ function makeStealthPng(width, height, text) {
     return 254 | (index < bits.length ? bits[index] : 1)
   })
 }
+
+/**
+ * A minimal big-endian TIFF/EXIF block carrying the tags NovelAI's WebP uses:
+ * ImageDescription, Software and a UserComment holding `outer` as JSON.
+ */
+function makeExifTiff({ description, software, userComment }) {
+  const entries = []
+  const payload = []
+  // Values longer than 4 bytes live after the IFD; offsets are measured from the
+  // TIFF header, so the 8-byte header is part of the base.
+  const offsets = []
+  let dataOffset = 8 + 2 + 3 * 12 + 4
+  const add = (tag, type, bytes) => {
+    entries.push({ tag, type, count: type === 2 ? bytes.length : bytes.length, bytes })
+    offsets.push(dataOffset)
+    payload.push(bytes)
+    dataOffset += bytes.length + (bytes.length % 2)
+  }
+  const ascii = (s) => Buffer.concat([Buffer.from(s, 'utf8'), Buffer.from([0])])
+  add(0x010e, 2, ascii(description))
+  add(0x0131, 2, ascii(software))
+  add(0x9286, 7, Buffer.concat([Buffer.from('ASCII\0\0\0', 'latin1'), Buffer.from(userComment, 'utf8')]))
+  const head = Buffer.alloc(8)
+  head.write('MM', 0, 'latin1')
+  head.writeUInt16BE(42, 2)
+  head.writeUInt32BE(8, 4)
+  const ifd = Buffer.alloc(2 + entries.length * 12 + 4)
+  ifd.writeUInt16BE(entries.length, 0)
+  entries.forEach((entry, index) => {
+    const at = 2 + index * 12
+    ifd.writeUInt16BE(entry.tag, at)
+    ifd.writeUInt16BE(entry.type, at + 2)
+    ifd.writeUInt32BE(entry.count, at + 4)
+    if (entry.bytes.length <= 4) entry.bytes.copy(ifd, at + 8)
+    else ifd.writeUInt32BE(offsets[index], at + 8)
+  })
+  return Buffer.concat([head, ifd, ...payload])
+}
+
+/** Wrap an EXIF block in a RIFF/WEBP container with a VP8X header. */
+function makeWebp(tiff) {
+  const chunk = (fourcc, data) => {
+    const head = Buffer.alloc(8)
+    head.write(fourcc, 0, 'latin1')
+    head.writeUInt32LE(data.length, 4)
+    return Buffer.concat([head, data, Buffer.alloc(data.length % 2)])
+  }
+  const vp8x = Buffer.alloc(10)
+  const body = Buffer.concat([Buffer.from('WEBP', 'latin1'), chunk('VP8X', vp8x), chunk('EXIF', tiff)])
+  const riff = Buffer.alloc(8)
+  riff.write('RIFF', 0, 'latin1')
+  riff.writeUInt32LE(body.length, 4)
+  return Buffer.concat([riff, body])
+}
+
+/** Wrap an EXIF block in a JPEG: SOI, APP1/Exif, EOI. */
+function makeJpeg(tiff) {
+  const app1 = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff])
+  const head = Buffer.alloc(4)
+  head[0] = 0xff
+  head[1] = 0xe1
+  head.writeUInt16BE(app1.length + 2, 2)
+  return Buffer.concat([Buffer.from([0xff, 0xd8]), head, app1, Buffer.from([0xff, 0xd9])])
+}
+
+/** The outer JSON NovelAI puts in a WebP/JPEG UserComment. */
+function naiOuterJson(comment) {
+  return JSON.stringify({
+    Title: 'AI generated image',
+    Description: comment.v4_prompt.caption.base_caption,
+    Software: 'NovelAI',
+    Source: 'NovelAI Diffusion V4.5 4BDE2A90',
+    Comment: JSON.stringify(comment)
+  })
+}
+
+await check('readNaiImage reads a WebP record from its EXIF UserComment', () => {
+  const webp = makeWebp(makeExifTiff({
+    description: NAI_COMMENT.v4_prompt.caption.base_caption,
+    software: 'NovelAI Diffusion V4.5 4BDE2A90',
+    userComment: naiOuterJson(NAI_COMMENT)
+  }))
+  assert.equal(imageKind(webp), 'webp')
+  const meta = readNaiImage(webp)
+  assert.equal(meta.ok, true)
+  assert.equal(meta.origin, 'exif')
+  assert.equal(meta.container, 'webp')
+  assert.equal(meta.model, 'nai-diffusion-4-5-full')
+  assert.equal(meta.params.seed, 120058854)
+  assert.equal(meta.params.cfgRescale, 0.6)
+  assert.equal(meta.caption.base, 'artist:foo, 2girls, beach')
+  assert.equal(meta.caption.characters.length, 2)
+  assert.deepEqual(meta.caption.characters[1].center, { x: 0.7, y: 0.5 })
+})
+
+await check('readNaiImage reads the same record from a JPEG App1/Exif block', () => {
+  const jpeg = makeJpeg(makeExifTiff({
+    description: NAI_COMMENT.v4_prompt.caption.base_caption,
+    software: 'NovelAI Diffusion V4.5 4BDE2A90',
+    userComment: naiOuterJson(NAI_COMMENT)
+  }))
+  assert.equal(imageKind(jpeg), 'jpeg')
+  const meta = readNaiImage(jpeg)
+  assert.equal(meta.ok, true)
+  assert.equal(meta.container, 'jpeg')
+  assert.equal(meta.params.seed, 120058854)
+})
+
+await check('a WebP without a record is reported by container, not as a PNG', () => {
+  const bare = makeWebp(Buffer.alloc(0))
+  const meta = readNaiImage(bare)
+  assert.equal(meta.ok, false)
+  assert.equal(meta.container, 'webp')
+  assert.match(meta.reason, /WebP/)
+  assert.equal(readNaiImage(Buffer.from('nope')).reason.includes('PNG / WebP / JPEG'), true)
+})
+
+await check('a WebP record replays with the same switch set as a PNG one', () => {
+  const png = makeRgbaPng(4, 4, () => 255, [
+    textChunkOf('Software', 'NovelAI'),
+    textChunkOf('Source', 'NovelAI Diffusion V5 0ADF9AB7'),
+    textChunkOf('Comment', JSON.stringify(NAI_COMMENT))
+  ])
+  const fromPng = readNaiImage(png)
+  // The outer JSON carries the Source; it must name the same model as the PNG
+  // fixture for the two replays to be comparable.
+  const webp = makeWebp(makeExifTiff({
+    description: 'x',
+    software: 'NovelAI',
+    userComment: JSON.stringify({ Title: 'AI generated image', Software: 'NovelAI', Source: 'NovelAI Diffusion V5 0ADF9AB7', Comment: JSON.stringify(NAI_COMMENT) })
+  }))
+  const fromWebp = readNaiImage(webp)
+  assert.equal(fromWebp.model, fromPng.model)
+  assert.deepEqual(fromWebp.replay, fromPng.replay)
+})
+
+await check('POST /png-meta accepts a WebP upload', async () => {
+  const webp = makeWebp(makeExifTiff({
+    description: 'x',
+    software: 'NovelAI Diffusion V4.5 4BDE2A90',
+    userComment: naiOuterJson(NAI_COMMENT)
+  }))
+  const response = await call(handler, { method: 'POST', url: '/nai-imagegen/api/png-meta?name=a.webp', body: webp })
+  assert.equal(response.status, 200)
+  const body = JSON.parse(response.body)
+  assert.equal(body.container, 'webp')
+  assert.equal(body.params.seed, 120058854)
+})
 
 await check('readNaiImage reads an official-style record from the text chunks', () => {
   const png = makeRgbaPng(4, 4, () => 255, [

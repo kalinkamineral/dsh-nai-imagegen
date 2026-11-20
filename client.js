@@ -509,7 +509,7 @@ window.__ModuleLoader__.load({
       sideRefToI2i: '拿这张做图生图',
       sidePngRead: '读图参数',
       sidePngReadRef: '读这张的参数',
-      sidePngReadHint: '从 NovelAI 原图（官网或本插件出的 PNG）读出提示词、种子和全部采样参数，填进工作台。拖进来的参考图是 PNG 时，也可以直接点「读这张的参数」。',
+      sidePngReadHint: '从 NovelAI 原图（官网或本插件出的 PNG / WebP）读出提示词、种子和全部采样参数，填进工作台。拖进来的参考图是 PNG 或 WebP 时，也可以直接点「读这张的参数」。',
       sidePngLoaded: '已读入图片参数',
       sidePngReplay: '按原图复现',
       sidePngReplayHint: '用图里记录的全部参数原样再出一张：不加画师串、UC 预设和质量词（原图提示词里已经包含）。种子留空则用原图种子。',
@@ -1093,9 +1093,9 @@ window.__ModuleLoader__.load({
       sideRefPick: 'Use as reference',
       sideRefPickHint: 'Send this entry\'s text to the prompt writer',
       sideRefToI2i: 'Use for img2img',
-      sidePngRead: 'Read PNG',
-      sidePngReadRef: 'Read this PNG',
-      sidePngReadHint: 'Read the prompt, seed and every sampling setting from a NovelAI PNG (official site or this plugin) into the workbench.',
+      sidePngRead: 'Read image',
+      sidePngReadRef: 'Read this image',
+      sidePngReadHint: 'Read the prompt, seed and every sampling setting from a NovelAI image (PNG or WebP, official site or this plugin) into the workbench.',
       sidePngLoaded: 'Image parameters loaded',
       sidePngReplay: 'Replay exactly',
       sidePngReplayHint: 'Render again with every recorded setting, adding no artist string, UC preset or quality tags (the recorded prompt already has them). Empty seed uses the recorded one.',
@@ -3929,6 +3929,8 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
             notes: Array.isArray(body.notes) ? body.notes : [],
             model: body.model ?? null,
             source: body.source ?? null,
+            // PNG / webp / jpeg: shown in the reader so the source format is visible.
+            container: body.container ?? null,
             // 复现用的完整记录留在这里，「填入编辑器」后再交给 onReplay。
             replay: body.replay ?? null
           })
@@ -5617,7 +5619,7 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
               h('input', {
                 ref: pngFileInput,
                 type: 'file',
-                accept: 'image/png',
+                accept: 'image/png,image/webp,image/jpeg,.png,.webp,.jpg,.jpeg',
                 hidden: true,
                 onChange: (event) => {
                   const file = event.target.files?.[0]
@@ -5625,8 +5627,8 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                   if (file) readPngInto(file)
                 }
               }),
-              refImage !== null && /\.png$/i.test(refImage.name)
-                ? btn(t('sidePngReadRef'), async () => readPngInto(new File([await (await fetch(refImage.dataUrl)).blob()], refImage.name, { type: 'image/png' })), {
+              refImage !== null && /\.(png|webp|jpe?g)$/i.test(refImage.name)
+                ? btn(t('sidePngReadRef'), async () => readPngInto(new File([await (await fetch(refImage.dataUrl)).blob()], refImage.name, { type: refImage.dataUrl.slice(5, refImage.dataUrl.indexOf(';')) })), {
                     kind: 'ghost',
                     size: 's',
                     title: t('sidePngReadHint')
@@ -5780,6 +5782,7 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                   'div',
                   { className: 'nai-s-reader-meta' },
                   [
+                    pngRead.container ? String(pngRead.container).toUpperCase() : null,
                     pngRead.model,
                     pngRead.params?.width && pngRead.params?.height ? `${pngRead.params.width}×${pngRead.params.height}` : null,
                     pngRead.params?.seed !== null && pngRead.params?.seed !== undefined ? `seed ${pngRead.params.seed}` : null,

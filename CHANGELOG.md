@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-20 · 0.9.8
+
+### Added
+
+- **WebP 也能读图了**：官网一直同时提供 PNG 和 WebP，两者的生成记录完整度相同，此前插件只认 PNG——不是 PNG 就直接拒绝。WebP 的记录不在文本块里，而在 `EXIF` 的 `UserComment` 标签：`ASCII\0\0\0` + 一层外层 JSON（`Title / Description / Software / Source / Comment`），`Comment` 键内才是与 PNG 相同的那条内层 JSON；`ImageDescription` 与 `Software`（含模型哈希）同样可用。JPEG 的 App1/Exif 是同一结构，一并支持。
+- **读图窗口接受三种格式**：文件选择器从 `image/png` 改为 PNG / WebP / JPEG，拖进来的参考图判断也从 `\.png$` 放宽；读图栏顶部显示实际格式。报错文案按容器区分，不再一律说 PNG。
+- 以一张 832×1216 的 V4.5 WebP 实测：读出的 seed、sampler、steps、scale、cfg_rescale、尺寸与 PNG 完全一致；只凭记录复现，结果与原图**逐像素相同**（`identical: True`）。
+
+### Changed
+
+- **`nai_read_png` 改名为 `nai_read_image`**：它现在读 PNG / WebP / JPEG，旧名字会误导。参数与返回字段不变。
+- `lib/png-meta.js` 按可信度依次尝试四种来源：PNG 文本块 → PNG alpha 通道隐写 → WebP EXIF → JPEG EXIF；返回结构新增 `container`（`png` / `webp` / `jpeg`）。
+
 ## 2026-11-16 · 0.9.7
 
 ### Changed

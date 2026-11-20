@@ -2501,17 +2501,17 @@ export function apply(ctx) {
 
   ctx.tools.register(
     defineTool({
-      name: 'nai_read_png',
+      name: 'nai_read_image',
       description:
-        'Read the generation record NovelAI stores inside one of its PNGs — from the official website or from this plugin — and optionally re-render it exactly. ' +
+        'Read the generation record NovelAI stores inside one of its images — PNG or WebP, from the official website or from this plugin — and optionally re-render it exactly. ' +
         'Returns the model, seed, sampler, steps, guidance, CFG rescale, the scene caption, each character caption with its position, and the negatives. ' +
-        'The record is read from the PNG text chunks, or from the hidden alpha-channel copy when the text was stripped; a JPEG, a screenshot or a chat-compressed image has lost it. ' +
+        'The record is read from PNG text chunks, the hidden alpha-channel copy when the text was stripped, or the EXIF block of a WebP/JPEG; a screenshot or a chat-compressed image has lost it. ' +
         'With `replay: true` the image is rendered again with every recorded switch and NO artist string, UC preset or quality tags added (they are already inside the recorded prompt), so the same seed gives the same picture as the website. Pass `seed` to replay with a new seed for variations.',
       parameters: {
         path: {
           type: 'string',
           required: true,
-          description: 'Absolute path to the PNG, or a file name inside the output gallery.'
+          description: 'Absolute path to the image (PNG / WebP / JPEG), or a file name inside the output gallery.'
         },
         replay: { type: 'boolean', description: 'Render it again with the recorded parameters. Default false: read only, costs nothing.' },
         seed: { type: 'integer', description: 'Replay with this seed instead of the recorded one.' },
@@ -2533,8 +2533,9 @@ export function apply(ctx) {
         const meta = readNaiImage(await readFile(file))
         if (!meta.ok) return { text: `读不出参数：${meta.reason}`, ok: false }
         const p = meta.params
+        const ORIGIN_LABEL = { text: 'PNG 文本块', stealth: 'PNG alpha 通道隐写', exif: 'EXIF 元数据' }
         const summary = [
-          `来源：${meta.source ?? '未知'}（${meta.origin === 'stealth' ? '从 alpha 通道隐写读出' : 'PNG 文本块'}）→ ${meta.model ?? '模型未知'}`,
+          `来源：${meta.source ?? '未知'}（${ORIGIN_LABEL[meta.origin] ?? meta.origin}，${String(meta.container ?? '').toUpperCase()}）→ ${meta.model ?? '模型未知'}`,
           `${p.width}×${p.height} · seed ${p.seed} · ${p.sampler} · ${p.steps} 步 · 引导 ${p.scale} · CFG rescale ${p.cfgRescale} · ${p.noiseSchedule}` +
             ` · prefer_brownian ${p.preferBrownian} · deliberate_euler_ancestral_bug ${p.deliberateEulerAncestralBug}` +
             (p.skipCfgAboveSigma !== null ? ` · variety(skip_cfg_above_sigma ${p.skipCfgAboveSigma.toFixed(2)})` : ''),
