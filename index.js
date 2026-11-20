@@ -771,8 +771,7 @@ async function statusPayload() {
     header: config.header ?? '',
     /** 官方质量词开关（默认关）。面板要能回显它，否则勾选状态看不出来。 */
     qualityToggle: config.qualityToggle === true,
-    /** 写词的两个开关，面板要能回显。 */
-    writerAdult: config.writerAdult === true,
+    /** 写词的输出通道开关，面板要能回显。 */
     writerToolCall: config.writerToolCall === true,
     // The effective proxy, so the panel can show what will actually be used
     // rather than just what was configured.
@@ -1195,9 +1194,13 @@ async function resolveVibes(options, config, sourceDir) {
   // render. `candidates()` returns usable keys, least-recently-used first.
   const idle = typeof pool.candidates === 'function' ? pool.candidates() : []
   const token = idle[0]?.token ?? config.token ?? null
-  if (!token) throw new Error('氛围转移：没有可用的 API Key')
   const proxy = proxyFor(config)
   const out = []
+  // Read every local reference first, then check the credential. A caller that
+  // named a file that is not there has made a request error, and the answer must
+  // say so whether or not a key happens to be configured — checking the key
+  // first turned "底图不存在" into "没有可用的 API Key" on any keyless setup.
+  const loaded = []
   for (const entry of raw) {
     if (!entry) continue
     // Two input shapes: a file name inside the source directory (the normal
@@ -1209,6 +1212,10 @@ async function resolveVibes(options, config, sourceDir) {
     const filePath = String(entry.file ?? entry.sourceImage ?? '').trim()
     if (filePath === '') throw new Error('氛围转移：参考图需要一个文件名')
     const bytes = await readBaseImage({ root: sourceDir, filePath })
+    loaded.push({ entry, bytes, filePath })
+  }
+  if (loaded.length > 0 && !token) throw new Error('氛围转移：没有可用的 API Key')
+  for (const { entry, bytes, filePath } of loaded) {
     const encoded = await encodeVibe({
       baseUrl: config.baseUrl,
       token,
@@ -1450,7 +1457,9 @@ async function renderNow(options) {
 
   const activePool = poolFor(config)
   if (!activePool.configured()) {
-    throw new Error('没有可用的 NovelAI API Key。侧栏面板里添加，或导出 NAI_TOKEN。')
+    // 401, not the generic 400: the request itself was well formed, the
+    // credential is what is missing. The panel already offers to add one.
+    throw Object.assign(new Error('没有可用的 NovelAI API Key。侧栏面板里添加，或导出 NAI_TOKEN。'), { status: 401 })
   }
 
   const job = {
@@ -1944,7 +1953,7 @@ function studioStateOf(sessionId) {
       writer: null,
       writerDraft: '',
       /** Per-write switches; null means "follow the stored settings". */
-      writerOpts: { toolCall: null, adult: null },
+      writerOpts: { toolCall: null },
       edit: { source: '', strength: 0.55, tool: 'img2img', prompt: '' },
       editJob: null,
       lib: { query: '' },
@@ -2166,8 +2175,7 @@ function studioSnapshot(state, config) {
     estimateText,
     writer: {
       text: String(state.writerDraft ?? ''),
-      toolCall: state.writerOpts?.toolCall ?? config.writerToolCall === true,
-      adult: state.writerOpts?.adult ?? config.writerAdult === true
+      toolCall: state.writerOpts?.toolCall ?? config.writerToolCall === true
     },
     writerText,
     writerBusy,
@@ -3226,7 +3234,7 @@ export function apply(ctx) {
         },
         width: { type: 'integer', description: 'Output width, when the caller already knows the size.' },
         height: { type: 'integer', description: 'Output height, when the caller already knows the size.' },
-        adult: { type: 'boolean', description: 'Add the adult-fiction scope note for this call only (defaults to the writerAdult setting).' },
+        adult: { type: 'boolean', description: 'Deprecated and ignored: the adult-fiction scope note was removed.' },
         tool_call: { type: 'boolean', description: 'Force the tool-call output channel for this call only (defaults to the writerToolCall setting).' }
       },
       output: { schema: { type: 'string' }, render: textRender((value) => value) },
@@ -3239,7 +3247,7 @@ export function apply(ctx) {
           characterIds: [],
           width: args.width,
           height: args.height,
-          adult: args.adult === undefined ? config.writerAdult === true : args.adult === true,
+          adult: false,
           toolCall: args.tool_call === undefined ? config.writerToolCall === true : args.tool_call === true,
           config,
           signal: exec.signal
@@ -3390,8 +3398,7 @@ export function apply(ctx) {
         },
         writer_adult: {
           type: 'boolean',
-          description:
-            'Append an adult fictional-scope note to the prompt writer (characters are adults; output tags, not prose). Off by default. When on, one refusal retry is allowed.'
+          description: 'Deprecated and ignored: the adult-fiction scope note was removed. Kept so an older config still loads.'
         },
         writer_tool_call: {
           type: 'boolean',
@@ -3438,7 +3445,6 @@ export function apply(ctx) {
           decode: 'decode',
           request_timeout_ms: 'requestTimeoutMs',
           use_new_shared_trial: 'useNewSharedTrial',
-          writer_adult: 'writerAdult',
           writer_tool_call: 'writerToolCall',
           output_dir: 'outputDir',
           source_dir: 'sourceDir',
@@ -3524,7 +3530,6 @@ export function apply(ctx) {
           'decode',
           'requestTimeoutMs',
           'useNewSharedTrial',
-          'writerAdult',
           'writerToolCall',
           'llmProvider',
           'llmModel',
@@ -3724,7 +3729,7 @@ export function apply(ctx) {
           height: body.height,
           // Per-request switches from the 「描述画面」 bar win over the stored
           // defaults; omitted fields keep following the settings.
-          adult: body.adult === undefined ? config.writerAdult === true : body.adult === true,
+          adult: false,
           toolCall: body.toolCall === undefined ? config.writerToolCall === true : body.toolCall === true,
           config,
           signal: disconnectSignal(res)
@@ -4645,7 +4650,7 @@ export function apply(ctx) {
             state.writerDraft = String(value ?? '')
             return undefined
           }
-          if (bind === 'data.writer.toolCall' || bind === 'data.writer.adult') {
+          if (bind === 'data.writer.toolCall') {
             state.writerOpts[bind.slice('data.writer.'.length)] = value === true
             return undefined
           }
@@ -4769,7 +4774,7 @@ export function apply(ctx) {
             characterIds: [],
             width: Number.isFinite(width) ? width : undefined,
             height: Number.isFinite(height) ? height : undefined,
-            adult: state.writerOpts?.adult ?? config.writerAdult === true,
+            adult: false,
             toolCall: state.writerOpts?.toolCall ?? config.writerToolCall === true,
             config,
             signal: controller.signal

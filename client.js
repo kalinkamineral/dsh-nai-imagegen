@@ -627,11 +627,8 @@ window.__ModuleLoader__.load({
       sideWriteEmpty: '写一句想要的画面，或者附一张参考图',
       sideWriteHint: '用 DSH 里配置的模型把描述写成下面的结构化提示词，不会自动出图（Ctrl+Enter）',
       sideWriterCard: '写提示词',
-      sideAdult: '成人向创作范围',
-      sideAdultHint: '在写词系统提示里说明：这是成年人之间的虚构插画、角色均为成年人、输出标签而不是叙述。默认关；开启后被拒会自动重试一次。',
       sideToolCall: '工具调用输出',
       sideToolCallShort: '工具调用',
-      sideAdultShort: '破限',
       sideToolCallHint: '给写词模型一个真实的 submit_caption 函数调用（tools），由模型直接返回结构化参数；不支持工具调用的模型会退回提示词 JSON。',
       sideWriteModel: '写提示词使用的模型',
       sideWritePlaceholder: '用自然语言描述想要的画面，例如：初音未来坐在雨后的天台上，背后是黄昏的城市。可以粘贴或拖入参考图。',
@@ -1213,11 +1210,8 @@ window.__ModuleLoader__.load({
       sideWriteEmpty: 'Describe the picture, or attach a reference image',
       sideWriteHint: 'Turns the description into the structured prompt below with the model set up in DSH; nothing is rendered (Ctrl+Enter)',
       sideWriterCard: 'Prompt writer',
-      sideAdult: 'Adult fictional scope',
-      sideAdultHint: 'Adds a scope note to the writer: adult fiction, adult characters, tags instead of prose. Off by default; when on, one refusal retry is allowed.',
       sideToolCall: 'Tool-call output',
       sideToolCallShort: 'Tool call',
-      sideAdultShort: 'Adult',
       sideToolCallHint: 'Send a real submit_caption function tool so the model returns structured arguments. Models without tool calling fall back to the prompt JSON.',
       sideWriteModel: 'Model used for writing',
       sideWritePlaceholder: 'Describe the picture in plain words, e.g. Hatsune Miku sitting on a rooftop after rain, a city at dusk behind her. You can paste or drop a reference image.',
@@ -2358,9 +2352,8 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
       if (wbDraft.current === null) wbDraft.current = side ? readWbDraft() : {}
       const draft0 = wbDraft.current
       const [nlText, setNlText] = React.useState(() => String(draft0.nlText ?? ''))
-      // Per-write switches shown next to 「描述画面」; null means "follow the settings".
+      // Per-write switch shown next to 「描述画面」; null means "follow the settings".
       const [writeToolCall, setWriteToolCall] = React.useState(null)
-      const [writeAdult, setWriteAdult] = React.useState(null)
       const [refImage, setRefImage] = React.useState(null)
       /**
        * 氛围转移 references: `[{ key, dataUrl, name, uploaded }]`. The bytes stay
@@ -3091,13 +3084,12 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
        * The setting is persisted, and the live controller is switched in the same
        * click so the buttons appear/disappear without a reload.
        */
-      /** 写词的两个开关共用一个 POST /config 处理器。 */
+      /** 写词的输出通道开关。 */
       const onToggleWriterOption = async (field) => {
         setBusy(`writer:${field}`)
         setError('')
         try {
-          const next =
-            field === 'writerAdult' ? status?.writerAdult !== true : status?.writerToolCall !== true
+          const next = status?.writerToolCall !== true
           await refreshStatus(
             await api('/config', { method: 'POST', body: JSON.stringify({ [field]: next }) })
           )
@@ -3773,7 +3765,6 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
             body: JSON.stringify({
               naturalLanguage: nlText,
               toolCall: writeToolCall === null ? status?.writerToolCall === true : writeToolCall,
-              adult: writeAdult === null ? status?.writerAdult === true : writeAdult,
               image: refImage?.dataUrl,
               references: pickedRefs.map(({ library, title, content }) => ({ library, title, content })),
               characterIds: [...new Set([...pickedChars, ...charRows.map((row) => row.charId).filter(Boolean)])],
@@ -5684,17 +5675,6 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
                   onChange: () => setWriteToolCall(!(writeToolCall === null ? status?.writerToolCall === true : writeToolCall))
                 }),
                 t('sideToolCallShort')
-              ),
-              h(
-                'label',
-                { className: 'nai-s-check', title: t('sideAdultHint') },
-                h('input', {
-                  type: 'checkbox',
-                  checked: writeAdult === null ? status?.writerAdult === true : writeAdult,
-                  disabled: writing,
-                  onChange: () => setWriteAdult(!(writeAdult === null ? status?.writerAdult === true : writeAdult))
-                }),
-                t('sideAdultShort')
               ),
               h('span', { className: 'nai-s-sp' }),
               writing ? btn(t('sideCancel'), onWriteCancel, { size: 's' }) : null,
@@ -7718,15 +7698,8 @@ body[data-ds-dark-theme] .nai-s-swatch{background:hsl(var(--hue,220) 22% 26%);co
           ),
           panelCard(
             t('sideWriterCard'),
-            `${t('sideAdult')} ${onOff(status?.writerAdult === true)} · ${t('sideToolCall')} ${onOff(status?.writerToolCall === true)}`,
+            `${t('sideToolCall')} ${onOff(status?.writerToolCall === true)}`,
             false,
-            switchRow(
-              t('sideAdult'),
-              t('sideAdultHint'),
-              status?.writerAdult === true,
-              () => onToggleWriterOption('writerAdult'),
-              busy === 'writer:writerAdult'
-            ),
             switchRow(
               t('sideToolCall'),
               t('sideToolCallHint'),

@@ -12,6 +12,14 @@
 
 - **`nai_read_png` 改名为 `nai_read_image`**：它现在读 PNG / WebP / JPEG，旧名字会误导。参数与返回字段不变。
 - `lib/png-meta.js` 按可信度依次尝试四种来源：PNG 文本块 → PNG alpha 通道隐写 → WebP EXIF → JPEG EXIF；返回结构新增 `container`（`png` / `webp` / `jpeg`）。
+- **去掉写词的「破限」开关**（`writerAdult`），保留「工具调用输出」：范围说明正文、写词被拒后的那一次自动重试、侧栏开关、设置页开关、DSH Go 表单开关、`nai_write_prompt` 的 `adult` 参数与 `nai_config` 的 `writer_adult` 一并移除。旧配置里的 `writerAdult` 键在下次保存时自动消失（`normalize` 只保留默认表里存在的键）；`adult` / `writer_adult` 作为已废弃字段仍被接受但不再生效，免得旧调用直接报错。
+
+### Fixed
+
+- **没配 API Key 时报 401，而不是 400**：缺凭据时的错误没有带状态码，`sendError` 的兜底把它映射成了 400「请求有误」。请求本身是好的，缺的是凭据，现在是 401。
+- **氛围转移先查文件、再查凭据**：`resolveVibes` 原先一开始就检查 Key，于是「指定了一张不存在的参考图」在没配 Key 的环境里会报「没有可用的 API Key」，把调用方的错误掩盖成环境问题。现在先把本地参考图都读一遍（不存在就照实报「底图不存在」），再检查凭据。
+
+  这两条正是 `npm run verify` 里 `POST /generate accepts the panel vibe list…` 一例长期失败的原因，CI 的 `verify` 从 2026-11-16 起一直是红的；现在 86 项全过。
 
 ## 2026-11-16 · 0.9.7
 

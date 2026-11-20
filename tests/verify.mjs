@@ -294,18 +294,19 @@ await check('config defaults carry the render deadline and shared-trial flag', (
   const defaults = configDefaults()
   assert.equal(defaults.requestTimeoutMs, 300000)
   assert.equal(defaults.useNewSharedTrial, true)
-  assert.equal(defaults.writerAdult, false)
+  // The adult-scope switch was removed; the key must not come back.
+  assert.equal('writerAdult' in defaults, false)
   assert.equal(defaults.writerToolCall, false)
 })
 
-await check('the writer extras append the adult and tool-call rules only when asked', () => {
+await check('the writer extras append the tool-call rule only when asked', () => {
   assert.equal(augmentWriterSystem('BASE', {}), 'BASE')
-  const adult = augmentWriterSystem('BASE', { adult: true })
-  assert.match(adult, /创作范围/)
-  assert.ok(!adult.includes('输出通道'))
-  const both = augmentWriterSystem('BASE', { adult: true, toolCall: true })
-  assert.match(both, /输出通道/)
-  assert.match(both, /submit_caption/)
+  // The adult-scope note was removed; nothing may be appended for it.
+  assert.equal(augmentWriterSystem('BASE', { adult: true }), 'BASE')
+  const toolCall = augmentWriterSystem('BASE', { toolCall: true })
+  assert.match(toolCall, /输出通道/)
+  assert.match(toolCall, /submit_caption/)
+  assert.ok(!toolCall.includes('创作范围'))
 })
 
 await check('tool mode packages the conversation as turn_* data tools', () => {
@@ -622,13 +623,12 @@ await check('the studio view is a valid native form inside the panel budget', as
     assert.ok(writerField, 'the writer textField must be bound to data.writer.text')
     assert.equal(writerField.type, 'textField')
     assert.equal(writerField.onChange, 'changed')
-    // 本次写词的两个开关：默认跟随设置，单独开关只影响这一次。
+    // 本次写词的输出通道开关：默认跟随设置，单独开关只影响这一次。
     const toolCallField = nodes.find((node) => node.bind === 'data.writer.toolCall')
-    const adultField = nodes.find((node) => node.bind === 'data.writer.adult')
     assert.ok(toolCallField, 'the per-write tool-call toggle must be bound')
-    assert.ok(adultField, 'the per-write adult toggle must be bound')
+    // The adult-scope switch is gone; its binding must not be emitted.
+    assert.equal(nodes.find((node) => node.bind === 'data.writer.adult'), undefined)
     assert.equal(toolCallField.type, 'toggle')
-    assert.equal(adultField.type, 'toggle')
     assert.equal(toolCallField.onChange, 'changed')
     const actionItems = nodes.filter((node) => node.type === 'actions').flatMap((node) => node.items ?? [])
     assert.ok(actionItems.some((item) => item.action === 'write'), 'the write action must be wired')
@@ -710,7 +710,7 @@ await check('the studio panel is registered and emits its form defaults', async 
   assert.deepEqual(first.resultItems, [])
   assert.equal(first.writer.text, '')
   assert.equal(typeof first.writer.toolCall, 'boolean')
-  assert.equal(typeof first.writer.adult, 'boolean')
+  assert.equal('adult' in first.writer, false)
   assert.equal(typeof first.writerText, 'string')
   assert.equal(first.writerError, '')
 })
