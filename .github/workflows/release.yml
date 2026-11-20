@@ -3,6 +3,10 @@ name: release
 on:
   push:
     tags: ['v*']
+  # A tag can be re-pointed while a release is being prepared (e.g. folding two
+  # versions into one); re-running by hand then refreshes the notes and asset
+  # instead of failing because the release already exists.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,10 +18,22 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build the friend bundle
         run: python3 scripts/build-share.py
-      - name: Create the GitHub release
+      - name: Publish or refresh the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.zip \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file RELEASE-NOTES.md
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          # workflow_dispatch has no ref name; fall back to the checked-out tag.
+          if [ "$tag" = "main" ] || [ -z "$tag" ]; then
+            tag="$(git describe --tags --exact-match)"
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # Re-pointed tag: replace notes and assets so the download matches.
+            gh release edit "$tag" --title "$tag" --notes-file RELEASE-NOTES.md
+            gh release upload "$tag" dist/*.zip --clobber
+          else
+            gh release create "$tag" dist/*.zip \
+              --title "$tag" \
+              --notes-file RELEASE-NOTES.md
+          fi
